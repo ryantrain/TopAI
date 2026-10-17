@@ -9,6 +9,14 @@ from pathlib import Path
 MAX_BYTES = 2 * 1024 * 1024
 
 
+def is_latex_math(problems):
+    """Recognize integral question/answer pairs, including mixed symbolic and numeric answers."""
+    return bool(problems) and all(
+        isinstance(p, dict) and isinstance(p.get('question'), str) and r'\int' in p['question']
+        for p in problems
+    ) and any(isinstance(p.get('answer'), str) and '\\' in p['answer'] for p in problems)
+
+
 def parse_dataset(raw, filename, scoring):
     if scoring not in ('exact', 'numeric'):
         raise ValueError('Choose exact or numeric scoring.')
@@ -38,6 +46,8 @@ def parse_dataset(raw, filename, scoring):
         rows = rows.get('examples')
     if not isinstance(rows, list) or not 20 <= len(rows) <= 2000:
         raise ValueError('Include 20–2,000 examples (20 distinct examples per round).')
+    if is_latex_math(rows):
+        scoring = 'exact'  # Preserve symbolic references; the upload route installs math judging.
     problems, seen = [], set()
     for i, row in enumerate(rows, 1):
         if not isinstance(row, dict):
