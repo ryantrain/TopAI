@@ -167,12 +167,21 @@ async def benchmark(state, reveal=False):
             answers = result.get('answers')
             if not isinstance(answers, list) or len(answers) != 10:
                 raise ValueError(f'{worker["name"]} returned an invalid answer list')
-        if plan and (state['mode'] == 'live' or scoring != 'rubric'):
+        if plan and (state['mode'] == 'live' or scoring == 'items'):
+            # Live verdicts come from Gemini; item counting stays local because it counts rather than judges.
             grades = await evaluation.grade(problems, answers, plan)
         else:
-            # Demo never invokes a judge or represents measured rubric quality.
-            grades = [dict(correct=datasets.matches(a, p['answer'], 'exact' if scoring == 'rubric' else scoring,
-                            dataset.get('tolerance', 1e-6) if dataset else 1e-6)) for p, a in zip(problems, answers)]
+            # Demo never calls the evaluator: seeded answers are compared locally so a demo costs nothing.
+            method = 'exact' if scoring in ('rubric', 'json') else scoring
+            tolerance = dataset.get('tolerance', 1e-6) if dataset else 1e-6
+            grades = []
+            for p, a in zip(problems, answers):
+                try:
+                    expected = number(p['answer']) if method == 'numeric' else p['answer']
+                    correct = datasets.matches(a, expected, method, tolerance)
+                except (ValueError, TypeError):
+                    correct = False
+                grades.append(dict(correct=correct))
         details = [dict(question=p['question'], expected=p['answer'], answer=a, **grade)
                    for p, a, grade in zip(problems, answers, grades)]
         return details, tokens, elapsed
@@ -427,14 +436,15 @@ async def start_round(request: StartRequest):
         except ValueError as error:
             raise HTTPException(400, str(error)) from None
         missing = providers.readiness(config)
+        plan = dataset.get('benchmark_plan') if dataset else None
+        # Fail before any paid worker call if the evaluator that must grade this run has no key.
+        if plan and plan['method'] != 'items' and not os.getenv('GEMINI_API_KEY'):
+            missing = missing + ['GEMINI_API_KEY (required: Gemini decides every verdict)']
         if missing:
             raise HTTPException(400, 'Set ' + ', '.join(missing) + ' in .env and restart the backend')
         if market['round'] and config != market.get('configuration'):
             raise HTTPException(409, 'Model configuration changed. Start a new session to keep benchmark history comparable.')
         local_models = [spec['model'] for spec in config['workers'] + [config['trader'], config['analyst']] if spec['provider'] == 'ollama']
-        plan = dataset.get('benchmark_plan') if dataset else None
-        if plan and plan['method'] == 'rubric':
-            local_models.append(plan['judge_model'])
         if local_models:
             try:
                 await providers.local_models_ready(local_models)
@@ -482,7 +492,7 @@ async def suggest_benchmark(request: GoalRequest):
     try:
         return await evaluation.suggest(request.goal, market.get('dataset'))
     except Exception:
-        raise HTTPException(400, 'Could not draft a benchmark with local Ollama. Start Ollama, install OLLAMA_JUDGE_MODEL (or OLLAMA_MODEL), or configure the fields manually.') from None
+        raise HTTPException(400, 'Could not draft a benchmark with local Ollama. Start Ollama, install OLLAMA_MODEL, or configure the fields manually.') from None
 
 
 @app.put('/api/benchmark')
@@ -498,8 +508,8 @@ async def save_benchmark(request: evaluation.BenchmarkPlan):
         raise HTTPException(400, str(error)) from None
     plan = request.model_dump()
     plan['saved_at'] = datetime.now(timezone.utc).isoformat()
-    if request.method == 'rubric':
-        plan['judge_model'] = evaluation.judge_model()
+    # Record which evaluator graded the run, so a saved result stays interpretable.
+    plan['evaluator'] = evaluation.evaluator()
     dataset['benchmark_plan'] = plan
     persist(market)
     return plan
