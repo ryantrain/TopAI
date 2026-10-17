@@ -1,0 +1,86 @@
+{
+  "instructions": "Grade each paper from 0 to 10. Rubric: correctness 0\u20136, evidence 0\u20134. Return only the total numeric mark per paper. Calibration example: \"Plants use sunlight to convert water and CO2 into sugars, releasing oxygen.\" Mark: 10 (correctness 6, evidence 4). Replace this rubric, calibration example, papers, and human marks with your own before benchmarking.",
+  "tolerance": 1,
+  "examples": [
+    {
+      "question": "Paper 1: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 2: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 3: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 4: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 5: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 6: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 7: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 8: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 9: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 10: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 11: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 12: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 13: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 14: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 15: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 16: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 17: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 18: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 19: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    },
+    {
+      "question": "Paper 20: REPLACE with a distinct student paper and assignment prompt.",
+      "answer": 0
+    }
+  ]
+}

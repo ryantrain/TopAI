@@ -1,0 +1,57 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { modelMetrics, metricLeaders, fastestQualified } from './model-metrics.mjs';
+const worker = (name, correct, tokens, seconds) => ({ name, scores: [{ round: 1, stage: 'benchmark', correct, total_tokens: tokens, elapsed_seconds: seconds, attempted: 10 }] });
+test('item efficiency and overall use actual item counts with matched coverage', () => {
+  const a = worker('More ideas', 8, 1000, 10), b = worker('Fewer ideas', 10, 1000, 10);
+  a.scores[0].output_count = 40;
+  b.scores[0].output_count = 20;
+  const rows = modelMetrics([a, b], null, true);
+  assert.equal(rows[0].efficiency, 40);
+  assert.equal(rows[1].efficiency, 20);
+  assert.equal(metricLeaders(rows, 'overall')[0].name, 'More ideas');
+  assert.equal(modelMetrics([a, b])[0].efficiency, 8);
+  b.scores[0].output_count = null;
+  assert.equal(modelMetrics([a, b], null, true)[0].efficiency, null);
+});
+test('different category winners and correctness-adjusted overall', () => {
+  const rows = modelMetrics([worker('Efficient', 8, 100, 10), worker('Fast', 10, 200, 5), worker('Wrong', 0, 10, 1)]);
+  assert.equal(metricLeaders(rows, 'efficiency')[0].name, 'Efficient');
+  assert.equal(metricLeaders(rows, 'speed')[0].name, 'Wrong');
+  assert.equal(metricLeaders(rows, 'overall')[0].name, 'Fast');
+  assert.equal(rows[0].efficiency, 80);
+  assert.equal(rows[0].speed, 1);
+  assert.equal(rows[2].overall, 0);
+});
+test('missing usage excludes unmatched batches and ties remain ties', () => {
+  assert.equal(modelMetrics([worker('A', 5, 100, 2), worker('B', 5, null, 2)])[0].overall, null);
+  const rows = modelMetrics([worker('A', 5, 100, 2), worker('B', 5, 100, 2)]);
+  assert.equal(metricLeaders(rows, 'overall').length, 2);
+  assert.equal(modelMetrics([worker('A', 0, 100, 2)])[0].overall, 0);
+  assert.deepEqual(metricLeaders(modelMetrics([worker('A', 0, 100, 2)]), 'overall'), []);
+});
+test('aggregate ratios use totals and selected round', () => {
+  const a = worker('A', 5, 100, 2);
+  a.scores.push({ round: 2, stage: 'reveal', correct: 10, total_tokens: 900, elapsed_seconds: 8, attempted: 10 });
+  assert.equal(modelMetrics([a])[0].efficiency, 15);
+  assert.equal(modelMetrics([a])[0].speed, 0.5);
+  assert.equal(modelMetrics([a], 2)[0].speed, 0.8);
+});
+test('USD per 1,000 tokens uses weighted totals and requires complete pricing', () => {
+  const a = worker('A', 5, 100, 2);
+  a.scores[0].estimated_cost_usd = 0.001;
+  a.scores.push({ round: 2, stage: 'benchmark', correct: 5, attempted: 10, total_tokens: 900, elapsed_seconds: 2, estimated_cost_usd: 0.018 });
+  assert.equal(modelMetrics([a])[0].costPer1k, 0.019);
+  assert.equal(modelMetrics([worker('Unknown', 5, 100, 2)])[0].costPer1k, null);
+  a.scores[1].estimated_cost_usd = null;
+  assert.equal(modelMetrics([a])[0].costPer1k, null);
+  a.scores.forEach(s => s.estimated_cost_usd = 0);
+  assert.equal(modelMetrics([a])[0].costPer1k, 0);
+});
+
+test('fastest recommendation respects the required accuracy and ties', () => {
+  const rows = modelMetrics([worker('Fast inaccurate', 6, 100, 1), worker('Qualified', 9, 100, 3), worker('Perfect', 10, 100, 5)]);
+  assert.equal(fastestQualified(rows, 90)[0].name, 'Qualified');
+  assert.equal(fastestQualified(rows, 100)[0].name, 'Perfect');
+  assert.deepEqual(fastestQualified(modelMetrics([worker('Unmeasured', 0, null, 0)]), 90), []);
+});
