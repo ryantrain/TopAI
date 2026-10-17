@@ -79,8 +79,13 @@ def event(state, kind, title, detail):
     ))
 
 
+ORDER_DELAY = 0.4
+
+
 def tick(state, label):
-    state['prices'].append(dict(tick=len(state['prices']), label=label, **{w['id']: w['price'] for w in state['workers']}))
+    # Keep ticks increasing after the history is trimmed so the chart's time axis never repeats.
+    state['prices'].append(dict(tick=state['prices'][-1]['tick'] + 1 if state['prices'] else 0, label=label,
+                                **{w['id']: w['price'] for w in state['workers']}))
     state['prices'] = state['prices'][-200:]
 
 
@@ -229,6 +234,8 @@ async def trading(state):
         trader['provider'] = 'simulated' if state['mode'] == 'demo' else config['trader']['provider']
         trader['model'] = 'Seeded strategy' if state['mode'] == 'demo' else config['trader']['model']
         for order in orders:
+            # Space out executions so the dashboard can draw each price move as it happens.
+            await asyncio.sleep(ORDER_DELAY)
             try:
                 if not isinstance(order, dict):
                     raise ValueError('Order must be an object')

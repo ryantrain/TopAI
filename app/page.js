@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import SolanaReceipt from './solana-receipt';
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3, Bot, Check, ChevronDown, CircleHelp, FlaskConical, Globe2, Layers3, Loader2, Play, Radio, RotateCcw, Sparkles, Trophy, X, Zap } from 'lucide-react';
@@ -16,6 +16,40 @@ const evidenceFor = (worker) => {
   const movement = scores.at(-1) - scores.at(-2);
   const spread = Math.max(...scores) - Math.min(...scores);
   return { record: `${spread} pt range · ${spread <= 20 ? 'steady' : 'variable'}`, movement };
+};
+
+// Advance a fractional tick toward the newest price so lines are drawn continuously, not per poll.
+function useDrawHead(prices) {
+  const [head, setHead] = useState(null);
+  const headRef = useRef(null);
+  const last = prices.at(-1)?.tick;
+  useEffect(() => {
+    if (last === undefined) return;
+    // First load and new sessions snap into place instead of replaying history.
+    if (headRef.current === null || headRef.current > last) { headRef.current = last; setHead(last); return; }
+    if (headRef.current === last) return;
+    let frame, previous = performance.now();
+    const step = (now) => {
+      // One tick per backend order delay; catch up faster when several ticks arrive at once.
+      const rate = Math.max(2.5, (last - headRef.current) / 0.6);
+      headRef.current = Math.min(last, headRef.current + rate * (now - previous) / 1000);
+      previous = now;
+      setHead(headRef.current);
+      if (headRef.current < last) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [last]);
+  return head;
+}
+const drawnPrices = (prices, head) => {
+  if (head === null) return prices;
+  const points = prices.filter(p => p.tick <= head);
+  const from = points.at(-1), to = prices.find(p => p.tick > head);
+  if (!from || !to || head <= from.tick) return points;
+  // The partial segment ends at an interpolated point that carries the upcoming label.
+  const f = (head - from.tick) / (to.tick - from.tick);
+  return [...points, { ...to, tick: head, ...Object.fromEntries(Object.keys(workerColors).map(id => [id, from[id] + (to[id] - from[id]) * f])) }];
 };
 
 export default function Exchange() {
@@ -39,7 +73,9 @@ export default function Exchange() {
       setError('');
     } catch (e) { setError(e.message || 'Could not connect to the exchange.'); }
   }
-  useEffect(() => { refresh(); const timer = setInterval(refresh, 1200); return () => clearInterval(timer); }, []);
+  useEffect(() => { refresh(); }, []);
+  // Poll quickly during a round so each executed order reaches the chart promptly.
+  useEffect(() => { const timer = setInterval(refresh, market?.running || busy ? 300 : 1200); return () => clearInterval(timer); }, [market?.running, busy]);
   useEffect(() => {
     if (!help && !selected) return;
     const previous = document.activeElement;
@@ -72,7 +108,10 @@ export default function Exchange() {
   const workers = market?.workers || [];
   const traders = [...(market?.traders || [])].sort((a, b) => b.equity - a.equity);
   const avg = workers.length ? workers.reduce((n, w) => n + (w.score || 0), 0) / workers.length : 0;
-  const chartData = (market?.prices || []).filter(p => range !== 'This round' || p.label.startsWith(`R${market?.round} `));
+  const prices = market?.prices || [];
+  const head = useDrawHead(prices);
+  const chartData = drawnPrices(prices, head).filter(p => range !== 'This round' || p.label.startsWith(`R${market?.round} `));
+  const tickLabel = (tick) => prices.find(p => p.tick === Math.ceil(tick))?.label ?? '';
   const benchmarkLabel = market?.round ? `R${market.round} benchmark` : null;
   const settlementLabel = market?.round ? `R${market.round} settlement` : null;
   const activePhase = market?.phase === 'analysis' ? 4 : phases.indexOf(market?.phase);
@@ -119,9 +158,9 @@ export default function Exchange() {
           <section className="market-layout">
             <div className="panel chart-panel"><div className="panel-heading"><div><h2>Performance market <span className="live-badge"><span className="status-dot"/> {running ? 'RUNNING' : 'READY'}</span></h2><p>Share prices respond to performance and trader conviction.</p></div><select aria-label="Chart range" value={range} onChange={e => setRange(e.target.value)}><option>All rounds</option><option>This round</option></select></div>
               <div className="chart-legend">{workers.map(w => <span key={w.id}><i style={{ background: w.color }}/>{w.name}<strong>{credits(w.price)}</strong></span>)}<span className="chart-unit">VIRTUAL CREDITS</span></div>
-              <div className="chart"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData.length ? chartData : market?.prices || []} margin={{ top: 16, right: 8, left: -25, bottom: 0 }}><defs><linearGradient id="marketFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a0ee88" stopOpacity={0.12}/><stop offset="100%" stopColor="#a0ee88" stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="#25292d" strokeDasharray="3 5"/><XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#727a82', fontSize: 10 }} minTickGap={75} tickMargin={15}/><YAxis domain={[0, 120]} axisLine={false} tickLine={false} tick={{ fill: '#727a82', fontSize: 10 }} ticks={[0, 30, 60, 90, 120]}/><Tooltip contentStyle={{ background: '#202427', border: '1px solid #3b4246', borderRadius: 8, color: '#eee', fontSize: 12 }} formatter={(v, name) => [`${credits(v)} cr`, name]}/><Area type="linear" dataKey="atlas" name="Atlas" stroke="none" fill="url(#marketFill)" legendType="none" tooltipType="none" isAnimationActive={false}/>{workers.map(w => <Line key={w.id} type="linear" dataKey={w.id} name={w.name} stroke={w.color} strokeWidth={2} dot={chartData.length < 2 ? { r: 4 } : false} activeDot={{ r: 4 }} isAnimationActive={false}/>)}</ComposedChart></ResponsiveContainer></div>
+              <div className="chart"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData.length ? chartData : drawnPrices(prices, head)} margin={{ top: 16, right: 8, left: -25, bottom: 0 }}><defs><linearGradient id="marketFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a0ee88" stopOpacity={0.12}/><stop offset="100%" stopColor="#a0ee88" stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="#25292d" strokeDasharray="3 5"/><XAxis dataKey="tick" type="number" domain={['dataMin', 'dataMax']} allowDecimals={false} tickFormatter={tickLabel} axisLine={false} tickLine={false} tick={{ fill: '#727a82', fontSize: 10 }} minTickGap={75} tickMargin={15}/><YAxis domain={[0, 120]} axisLine={false} tickLine={false} tick={{ fill: '#727a82', fontSize: 10 }} ticks={[0, 30, 60, 90, 120]}/><Tooltip labelFormatter={tickLabel} contentStyle={{ background: '#202427', border: '1px solid #3b4246', borderRadius: 8, color: '#eee', fontSize: 12 }} formatter={(v, name) => [`${credits(v)} cr`, name]}/><Area type="linear" dataKey="atlas" name="Atlas" stroke="none" fill="url(#marketFill)" legendType="none" tooltipType="none" isAnimationActive={false}/>{workers.map(w => <Line key={w.id} type="linear" dataKey={w.id} name={w.name} stroke={w.color} strokeWidth={2} dot={chartData.length < 2 ? { r: 4 } : false} activeDot={{ r: 4 }} isAnimationActive={false}/>)}</ComposedChart></ResponsiveContainer></div>
               {!market?.round && <div className="chart-empty"><Sparkles size={15}/> The opening bell is yours. Run a round to start price discovery.</div>}
-              <div className="chart-footer"><span><Radio size={13}/> Updates every 1.2 seconds</span><span>Benchmark-backed. Agent-driven.</span></div>
+              <div className="chart-footer"><span><Radio size={13}/> {running ? 'Drawing live as orders execute' : 'Updates every 1.2 seconds'}</span><span>Benchmark-backed. Agent-driven.</span></div>
             </div>
             <div className="panel round-panel"><div className="panel-heading"><h2>Round progress</h2><span className="round-number">ROUND {String(market?.round || 1).padStart(2, '0')}</span></div><p className="round-intro">Each round has four steps.</p><div className="phases">{phases.map((phase, i) => { const done = market?.phase === 'complete' || activePhase > i; return <div className={`phase ${activePhase === i ? 'current' : ''} ${done ? 'done' : ''}`} key={phase}><div className="phase-node">{done ? <Check size={13}/> : activePhase === i ? <span className="pulse"/> : String(i + 1).padStart(2, '0')}</div><div><strong>{phaseLabels[i]}</strong><small>{['Workers solve 10 fresh problems', 'Five traders place their bets', 'A new benchmark tests predictions', 'Shares redeem. Profits realized.'][i]}</small></div>{activePhase === i && <Loader2 size={13} className="spin"/>}</div>; })}</div><div className="settlement-note"><Zap size={14}/><p>Each share pays <strong>10 + next score</strong> credits at settlement.</p></div><button className="text-button" onClick={() => setHelp(true)}>How rounds work <ArrowRight size={14}/></button></div>
           </section>
