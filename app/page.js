@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Play, RotateCcw } from 'lucide-react';
-import AgentsPanel, { DEFAULT_SEATS, seatedAgents } from './agents';
+import AgentsPanel, { DEFAULT_ACTIVE, extraAgents, seatedAgents } from './agents';
 import Composer from './composer';
 import ProgressChart from './progress-chart';
 import ReportCard, { Recommendation } from './report-card';
@@ -29,7 +29,7 @@ export default function ClassroomPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState(null);
-  const [seats, setSeats] = useState(DEFAULT_SEATS);
+  const [active, setActive] = useState(DEFAULT_ACTIVE);
   const [selected, setSelected] = useState(null);
   const [minimum, setMinimum] = useState(80);
   const latest = useRef(0);
@@ -47,13 +47,13 @@ export default function ClassroomPage() {
 
   useEffect(() => {
     setRun(load('classRun', sessionStorage, null));
-    setSeats(load('seats', localStorage, DEFAULT_SEATS));
+    setActive({ ...DEFAULT_ACTIVE, ...load('activeAgents', localStorage, {}) });
     refresh();
   }, [refresh]);
   useEffect(() => { const t = setInterval(refresh, market?.running || busy ? 500 : 2000); return () => clearInterval(t); }, [market?.running, busy, refresh]);
 
-  function seat(index, key) {
-    setSeats(previous => { const next = [...previous]; next[index] = key; store('seats', localStorage, next); return next; });
+  function toggle(key) {
+    setActive(previous => { const next = { ...previous, [key]: !previous[key] }; store('activeAgents', localStorage, next); return next; });
   }
 
   async function start({ mode, rounds, plan }) {
@@ -83,12 +83,15 @@ export default function ClassroomPage() {
     finally { setBusy(false); }
   }
 
-  const agents = seatedAgents(market?.workers || [], seats);
+  const agents = seatedAgents(market?.workers || [], active);
+  // Switched-off agents still run on the backend, but are left out of every comparison.
+  const inClass = agents.filter(a => a.active);
+  const classroom = agents.length ? [...agents, ...extraAgents(active)] : [];
   const countItems = market?.dataset?.benchmark_plan?.method === 'items';
   const step = market?.running || (busy && run) ? 1 : market?.round > 0 ? 2 : 0;
   useEffect(() => { window.scrollTo({ top: 0 }); }, [step]);
 
-  const rows = withAspects(modelMetrics(agents, null, countItems));
+  const rows = withAspects(modelMetrics(inClass, null, countItems));
   const pick = recommend(rows, minimum);
   const configured = market?.integrations?.configuration?.workers?.map(w => `${w.provider} · ${w.model}`) || [];
   const models = step > 0 && market?.mode === 'demo' ? agents.map(() => 'Simulated') : configured;
@@ -123,7 +126,7 @@ export default function ClassroomPage() {
           <div>
             <p className="eyebrow">{STEPS[step]}</p>
             <h1>{step === 0 ? 'Choose your agents and set the task' : step === 1 ? `Quiz ${quiz} of ${total} · ${phaseTitle}` : 'How the agents did'}</h1>
-            <p>{step === 0 ? 'Pick who sits at each desk, describe the task below, and attach a worksheet with questions and answers.'
+            <p>{step === 0 ? 'Switch on the agents you want to compare, describe the task below, and add a worksheet with questions and answers.'
               : step === 1 ? `${phaseDetail}. Every agent gets the same questions without the answer key.`
               : goal || (market?.mode === 'demo' ? 'Practice run on sample questions.' : 'Run on the default questions.')}</p>
             {step === 1 && <div className="progress" role="progressbar" aria-label="Class progress" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress * 100}%` }}/></div>}
@@ -135,15 +138,15 @@ export default function ClassroomPage() {
 
         <div className="stage-grid">
           <div className="stage-left">
-            <AgentsPanel agents={agents} models={models} state={state} statuses={statuses} scores={scores} top={step === 2 ? pick?.worker.id : null}
-              seats={seats} onSeat={step === 0 ? seat : null} onOpen={step > 0 ? setSelected : null} compact={step > 0}/>
+            <AgentsPanel agents={classroom} models={models} state={state} statuses={statuses} scores={scores} top={step === 2 ? pick?.worker.id : null}
+              onToggle={step === 0 ? toggle : null} onOpen={step > 0 ? setSelected : null} compact={step > 0}/>
             {step === 2 && <Recommendation pick={pick} minimum={minimum} setMinimum={setMinimum} demo={market?.mode === 'demo'}/>}
           </div>
-          {step === 1 && <div className="stage-right"><ProgressChart agents={agents} countItems={countItems} live/></div>}
+          {step === 1 && <div className="stage-right"><ProgressChart agents={inClass} countItems={countItems} live/></div>}
           {step === 2 && <div className="stage-right">
             <details className="drawer chart-drawer">
               <summary>Live chart<ChevronDown size={16} aria-hidden="true"/></summary>
-              <ProgressChart agents={agents} countItems={countItems} height={240}/>
+              <ProgressChart agents={inClass} countItems={countItems} height={240}/>
             </details>
             <ReportCard rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>
           </div>}
