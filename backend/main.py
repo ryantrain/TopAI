@@ -25,6 +25,10 @@ load_dotenv(ROOT.parent / '.env')
 from backend import datasets, evaluation, library, providers, receipts, storage
 from backend.providers import ask
 DB = Path(os.getenv('EXCHANGE_DB', str(ROOT / 'market.sqlite3')))
+# Uploaded worksheets and the questions, answers and responses derived from them stay in these files on
+# this computer. DATABASE_URL may be a shared cloud database, so it only ever receives a copy without them.
+WORKSHEETS = DB.parent / 'worksheets.local.json'
+LOCAL_MARKET = DB.parent / 'market.local.json'
 WORKERS = [
     ('atlas', 'Atlas', 'ATL', '#9af580', 'Careful reasoning', 'Solve carefully, verify each calculation, then answer.'),
     ('nova', 'Nova', 'NVA', '#a89bff', 'Fast intuition', 'Solve quickly using your mathematical intuition.'),
@@ -40,7 +44,7 @@ task = None
 def initial_state():
     return {
         'session_id': str(uuid4()), 'round': 0, 'phase': 'ready', 'running': False, 'mode': 'demo', 'error': None,
-        'configuration': None, 'analysis': None, 'receipt': None, 'dataset': None, 'library': [], 'selection': [],
+        'configuration': None, 'analysis': None, 'receipt': None, 'dataset': None, 'selection': [],
         'workers': [dict(id=w[0], name=w[1], symbol=w[2], color=w[3], style=w[4],
                          price=60.0, previous=60.0, score=None, scores=[], answers=[]) for w in WORKERS],
         'traders': [dict(id=i, name=n, strategy=s, cash=10000.0, holdings={}, pnl=0.0, reason='Waiting for the first benchmark.')
@@ -51,17 +55,52 @@ def initial_state():
 
 
 def persist(state):
-    storage.save(DB, state)
+    storage.write_local(LOCAL_MARKET, state)
+    storage.save(DB, shareable(state))
+
+
+def shareable(state):
+    """The copy for the database: uploaded questions, reference answers and model responses are left out."""
+    if not state.get('dataset') and 'library' not in state:
+        return state
+    shared = copy.deepcopy(state)
+    shared.pop('library', None)
+    if shared.get('dataset'):
+        shared['dataset'].pop('problems', None)
+        for worker in shared['workers']:
+            worker['answers'] = [{k: v for k, v in a.items() if k in ('correct', 'score', 'output_count')} for a in worker['answers']]
+    return shared
+
+
+def save_worksheets():
+    storage.write_local(WORKSHEETS, worksheets)
 
 
 def restore():
     state = storage.load(DB) or initial_state()
+    local = storage.read_local(LOCAL_MARKET)
+    # The local copy still has the uploaded questions that the database copy leaves out.
+    if isinstance(local, dict) and (local.get('session_id'), local.get('round')) == (state.get('session_id'), state.get('round')):
+        state = local
     state.setdefault('session_id', str(uuid4()))
     state.setdefault('configuration', None)
     state.setdefault('analysis', None)
     state.setdefault('receipt', None)
-    state.setdefault('library', [])
     state.setdefault('selection', [])
+    # Older versions kept worksheets in the market itself; move them to the local file.
+    legacy = state.pop('library', None) or []
+    known = {entry['id'] for entry in worksheets}
+    worksheets.extend(entry for entry in legacy if entry['id'] not in known)
+    if legacy:
+        save_worksheets()
+    dataset = state.get('dataset')
+    if dataset and 'problems' not in dataset:
+        entries = {entry['id']: entry for entry in worksheets}
+        files = dataset.get('files') or []
+        if files and all(f in entries for f in files):
+            dataset['problems'] = library.combine([entries[f] for f in files])['problems']
+        else:
+            state.update(dataset=None, selection=[])
     activity_ids = set()
     for item in state['activity']:
         if not isinstance(item.get('id'), str) or item['id'] in activity_ids:
@@ -69,9 +108,12 @@ def restore():
         activity_ids.add(item['id'])
     if state['running']:
         state.update(running=False, phase='interrupted', error='The server restarted during a round. Start a new session to continue.')
+    if legacy:
+        persist(state)
     return state
 
 
+worksheets = storage.read_local(WORKSHEETS) or []
 market = restore()
 
 
@@ -357,8 +399,8 @@ class StartRequest(BaseModel):
 async def get_market():
     result = copy.deepcopy(market)
     # The menu only needs file summaries; questions and answers stay on the server.
-    result['library'] = [library.summary(entry) for entry in result['library']]
-    selected = [e for e in market['library'] if e['id'] in market['selection']]
+    result['library'] = [library.summary(entry) for entry in worksheets]
+    selected = [e for e in worksheets if e['id'] in market['selection']]
     result['selection_count'] = library.combine(selected)['count'] if selected else 0
     if result.get('dataset'):
         result['dataset'].pop('problems', None)
@@ -537,28 +579,28 @@ async def remove_dataset():
 async def reset():
     if market['running']:
         raise HTTPException(409, 'Wait for the current round to finish')
-    saved = market['library']
     market.clear()
-    # Saved files outlive the session; the active selection does not.
-    market.update(initial_state(), library=saved)
+    # Saved worksheets live outside the market, so they outlive the session; the active selection does not.
+    market.update(initial_state())
     persist(market)
     return {'status': 'reset'}
 
 
 def add_to_library(entry):
-    if len(market['library']) >= library.MAX_FILES:
+    if len(worksheets) >= library.MAX_FILES:
         raise HTTPException(409, f'The library holds up to {library.MAX_FILES} files. Remove one first.')
-    market['library'].insert(0, entry)
+    worksheets.insert(0, entry)
+    save_worksheets()
 
 
 def selection_count():
-    selected = [e for e in market['library'] if e['id'] in market['selection']]
+    selected = [e for e in worksheets if e['id'] in market['selection']]
     return library.combine(selected)['count'] if selected else 0
 
 
 def select_files(ids):
     """Make the chosen library files the active dataset. Fewer than 20 questions leaves no dataset, which blocks runs."""
-    entries = {e['id']: e for e in market['library']}
+    entries = {e['id']: e for e in worksheets}
     ids = [i for i in dict.fromkeys(ids) if i in entries]
     market['selection'] = ids
     combined = library.combine([entries[i] for i in ids]) if ids else None
@@ -652,7 +694,7 @@ async def choose_files(request: SelectionRequest):
 
 @app.get('/api/library/{file_id}')
 async def download_file(file_id: str):
-    entry = next((e for e in market['library'] if e['id'] == file_id), None)
+    entry = next((e for e in worksheets if e['id'] == file_id), None)
     if not entry:
         raise HTTPException(404, 'File not found.')
     filename = re.sub(r'[^a-z0-9]+', '-', entry['name'].lower()).strip('-') or 'benchmark'
@@ -663,7 +705,8 @@ async def download_file(file_id: str):
 async def delete_file(file_id: str):
     if file_id in market['selection']:
         ensure_unlocked()
-    market['library'] = [e for e in market['library'] if e['id'] != file_id]
+    worksheets[:] = [e for e in worksheets if e['id'] != file_id]
+    save_worksheets()
     if file_id in market['selection']:
         select_files([i for i in market['selection'] if i != file_id])
     persist(market)

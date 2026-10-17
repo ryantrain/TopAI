@@ -52,6 +52,24 @@ def load(path):
     return row[0] if isinstance(row[0], dict) else json.loads(row[0])
 
 
+def read_local(path):
+    try:
+        return json.loads(Path(path).read_text(encoding='utf-8'))
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def write_local(path, data):
+    """Write a JSON file readable only by this user, replacing it atomically so a crash never leaves half a file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + '.tmp')
+    with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w', encoding='utf-8') as file:
+        json.dump(data, file, allow_nan=False)
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+
+
 def history(path):
     with connection(path) as (db, _, postgres):
         rows = db.execute('SELECT session_id, round, recorded_at FROM exchange_rounds ORDER BY recorded_at DESC, round DESC LIMIT 30').fetchall()
