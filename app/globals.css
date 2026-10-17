@@ -96,3 +96,5 @@ button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #334
 .benchmark-details{padding:12px 0}.benchmark-details summary{font-size:12px;color:#334155;cursor:pointer;margin-bottom:14px}.benchmark-details>label{margin-top:16px}.benchmark-setup{margin-bottom:24px}.benchmark-setup fieldset>label:first-child textarea{min-height:76px}
 
 .benchmark-save-status{margin-bottom:18px;padding:12px 0;border-bottom:1px solid #e2e8f0;color:#17202e;font-size:13px}.benchmark-save-status strong{font-weight:600}.benchmark-save-status p{margin-top:6px}
+
+.execution-summary h4{font-size:14px;font-weight:600;color:#17202e;margin:4px 0 10px}.execution-summary ul{list-style:disc;padding-left:20px;margin-top:12px;max-width:75ch;color:#334155;font-size:12px;line-height:1.7}.execution-summary li+li{margin-top:8px}.benchmark-details textarea{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;tab-size:2}.execution-summary [role=alert]{color:#b91c1c}

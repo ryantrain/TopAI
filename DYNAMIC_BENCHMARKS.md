@@ -2,17 +2,41 @@
 
 A dataset is a collection of test cases. A benchmark specification defines what counts as success for those cases. The app now saves both together.
 
-1. Use the visible task text box before or after uploading at least 20 distinct question/reference-answer pairs.
-2. Describe the specific job, such as “summarize support tickets in two sentences, keeping the issue and requested action without inventing facts.”
-3. Click **Build benchmark from my request**. Paper-grading requests have a built-in local parser that needs no model server. Other requests use local Ollama, or you can fill in the specification manually. With a dataset uploaded, the planner receives its name, size, reference type, existing task instructions, and up to three bounded question samples. Evaluation answer keys are not sent to the planner. A draft entered before upload is retained when you upload; click Build again to tailor it to the new dataset.
-4. Review the shared task instructions, the metrics, the tolerance, and the pass threshold; save them explicitly. These become the context Gemini uses when it checks answers.
-5. Run a live benchmark. It proceeds in batches of 10 questions:
-   - the batch of 10 goes to all three demo agents at once, with the same task instructions and no reference answers; each agent answers all 10 in a single call;
-   - each agent's 10 answers then go to Gemini in a single call, together with the questions and reference answers, and Gemini returns a verdict and reason for each;
-   - the Python backend stores the 30 verdicts and updates the stored state, the UI graph, and the metrics;
-   - a round runs two such stages, 10 public questions then 10 unused holdout questions. That is 6 Gemini calls per round, 3 of them concurrent, which is deliberate: grading one answer per call would multiply requests tenfold and run into rate limits.
-   Existing dataset-level instructions are also sent to workers, so keep evaluation answer keys out of those instructions.
-6. Inspect individual answers and Gemini's reason for each verdict. Criteria, reference answers, model configuration, and results persist in the local database and round archives. Criteria cannot change after the first round starts.
+1. Describe the job and what matters: for example, “Find a consistent paper grader; compare with human marks and measure whether it grades too harshly.”
+2. Click **Build benchmark execution plan**. Local Ollama receives the full goal and available backend operations. With a dataset uploaded it also receives the name, size, reference type, existing task instructions, and up to three bounded question samples. Reference answers are not sent to the planner. Paper grading has a template that the planner adapts to the full request; it no longer bypasses planning with a keyword-only parser.
+3. Review **How this benchmark will run**. Expand **Review or edit backend execution plan** for the complete JSON string. This is an executable configuration, not another prompt sent to workers.
+4. Upload real question/reference pairs and save the plan. If you drafted before uploading, build again to account for the uploaded dataset. Unsupported requirements appear in the draft and block saving until addressed.
+5. Run a live benchmark. The backend follows the saved selection, repetitions, scoring, tolerance, threshold, and worker instructions. Each model answers a batch of 10 questions, then Gemini grades that batch of answers in one call using the saved criteria. References remain out of worker prompts.
+6. Inspect worker details for individual trials, repeat agreement, numeric error/bias, and Gemini's reason for each verdict. Plans and measurements persist in the local database and round archives. Changing the plan requires a new session.
+
+## Executable plan contract
+
+`execution_spec` is a JSON string compiled and validated by `BenchmarkPlan` when saved. Its settings override any conflicting legacy top-level scoring fields. Unknown JSON operations, invalid repetitions, incompatible references, and malformed plans are rejected before running. The stored plan includes the canonical string and validated fields consumed by the runner. Existing saved plans continue with sequential selection and one repetition unless configured otherwise.
+
+```json
+{
+  "procedure": "Shuffle the uploaded papers reproducibly. Grade the same ten papers in three separate calls per model. Compare every mark with the human reference. Report pass rate, mean absolute mark error, signed grading bias, and exact repeat agreement. Reserve a disjoint ten-paper batch for settlement.",
+  "selection": "shuffled",
+  "repetitions": 3,
+  "unsupported_requirements": [],
+  "method": "numeric",
+  "output_unit": "answers",
+  "instructions": "Grade each supplied paper using its assignment and marking rubric. Return only its total numeric mark on the supplied scale.",
+  "rubric": "",
+  "tolerance": 1,
+  "pass_score": 80
+}
+```
+
+- `selection`: `sequential` or `shuffled`. Shuffling uses a fixed dataset-derived seed, without mutating the uploaded order. Public and settlement batches remain disjoint, and all models see the same examples.
+- `repetitions`: 1–5 separate calls per model on the same ten examples per stage. Every round uses 20 unique examples and `6 × repetitions` worker calls, plus the same number of Gemini evaluator calls (one per model per stage per attempt, each grading 10 answers). Repetitions multiply inference usage; worker tokens and time are summed across attempts. Scores are normalized over every attempted answer.
+- `method`, `tolerance`, `pass_score`, `rubric`: control actual grading. The need is used by the planner and passed to Gemini as evaluation context; it is no longer appended to worker prompts. Only `instructions` and existing dataset task instructions describe the worker's job.
+- `procedure`: explains the experiment for review. It does not execute arbitrary prose or rewrite Python. Changing backend behavior requires changing the validated settings. Additional algorithms require backend implementation.
+- `unsupported_requirements`: planner-reported measurements the backend cannot perform. Nonempty lists block saving; this is an LLM assessment, not proof that all needs were captured.
+
+Repeated runs report the percentage of examples with exactly matching outputs across every trial, ignoring JSON object key order. This is output stability, not semantic consistency. Numeric runs also report valid numeric count, mean absolute error, and mean signed error (`response − reference`): positive bias means higher marks, negative means lower. Invalid numeric responses fail scoring and are excluded from error averages, with the valid count displayed. All diagnostics are descriptive; the market still settles using the configured pass percentage. Demo diagnostics are simulated.
+
+The planner can assemble supported experiments and evaluation criteria. It cannot add tools, generate authoritative answer keys, execute arbitrary code, or silently implement new scoring algorithms. Qualitative originality/usefulness can be judged by Gemini against your criteria, but objective semantic novelty or population fairness measurements require additional backend support.
 
 ## Who decides correctness
 
@@ -25,6 +49,8 @@ There is one evaluator: Gemini. The previous arrangement — a separate judge ag
 | Deciding whether an answer is correct | Gemini, one batched call per agent per stage |
 | Counting distinct generated items | Python (a count, not a verdict) |
 | Storing the verdict and updating the graph and metrics | Python backend |
+
+The goal is compiled into explicit execution settings and scoring criteria. Review those settings before saving; prose alone does not change the runner. Python never executes generated code or uploaded scripts.
 
 The saved criteria (task instructions, tolerance, pass threshold, scoring notes) are passed to Gemini as context for its verdict. They no longer select a different evaluator or a different code path. Python does not re-compare the answer itself, and never executes generated code or uploaded scripts.
 
@@ -78,14 +104,14 @@ The start endpoint checks that required local models are installed before issuin
 
 ## Example: “I want the best one for grading papers”
 
-The text box is available before upload. Ollama turns the request into worker instructions to grade actual papers against the supplied assignment and marking criteria, plus the tolerance for numeric marks. Your original request remains part of every worker’s instructions, including any extra constraints.
+The text box is available before upload. The planner uses a paper-grading template with shuffled examples and three repeated calls, adapting it to the full request. For numeric human marks it can choose numeric agreement; for written feedback it can choose rubric evaluation. Review the generated execution plan and tolerance before saving. The runner then carries out the saved settings rather than passing the original benchmark-selection request to the tested models.
 
 Upload the real papers, assignment prompts, and marking criteria as questions and human-assigned marks as reference answers. Review and save the plan to that dataset. The three demo agents then actually grade these papers; they do not take a general math benchmark. Gemini compares each agent's mark or feedback to the human reference and decides whether it counts as correct. The app does not fabricate student papers or ground-truth human marks from the request alone.
 
 ## Saved criteria and task metrics
 
-After a successful save, the criteria panel displays **Criteria saved**, the dataset,
-scoring method, and server save time. Edits display **Unsaved changes** until saved.
+After a successful save, the panel displays **Execution plan saved**, the dataset,
+scoring method, and server save time. Edits display **Unsaved changes** until saved. Editing the need clears its draft plan so it must be rebuilt.
 The persisted plan survives page reloads. Replacing the dataset requires saving its
 criteria again; a new session clears the active dataset and plan.
 
