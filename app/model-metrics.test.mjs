@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { modelMetrics, metricLeaders, fastestQualified } from './model-metrics.mjs';
+import { modelMetrics, metricLeaders, fastestQualified, withAspects, cumulativeSeries, recommend, letterGrade } from './model-metrics.mjs';
 const worker = (name, correct, tokens, seconds) => ({ name, scores: [{ round: 1, stage: 'benchmark', correct, total_tokens: tokens, elapsed_seconds: seconds, attempted: 10 }] });
 test('item efficiency and overall use actual item counts with matched coverage', () => {
   const a = worker('More ideas', 8, 1000, 10), b = worker('Fewer ideas', 10, 1000, 10);
@@ -54,4 +54,23 @@ test('fastest recommendation respects the required accuracy and ties', () => {
   assert.equal(fastestQualified(rows, 90)[0].name, 'Qualified');
   assert.equal(fastestQualified(rows, 100)[0].name, 'Perfect');
   assert.deepEqual(fastestQualified(modelMetrics([worker('Unmeasured', 0, null, 0)]), 90), []);
+});
+
+test('recommendation prefers qualified overall, else accuracy then overall', () => {
+  const a = { ...worker('Slow', 8, 1000, 20), id: 'a' }, b = { ...worker('Quick', 8, 1000, 5), id: 'b' }, c = { ...worker('Weak', 5, 100, 1), id: 'c' };
+  const rows = withAspects(modelMetrics([a, b, c]));
+  assert.equal(recommend(rows, 80).worker.name, 'Quick');
+  assert.equal(recommend(rows, 80).qualified, true);
+  const none = recommend(rows, 90);
+  assert.equal(none.qualified, false);
+  assert.equal(none.worker.name, 'Quick');
+  assert.equal(recommend([], 80), null);
+});
+test('cumulative series keeps running accuracy per batch', () => {
+  const a = { id: 'a', scores: [{ round: 1, stage: 'benchmark', correct: 10, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }, { round: 1, stage: 'reveal', correct: 0, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }] };
+  const rows = cumulativeSeries([a], 'accuracy');
+  assert.deepEqual(rows.map(r => r.a), [100, 50]);
+  assert.deepEqual(rows.map(r => r.label), ['Quiz 1 · A', 'Quiz 1 · B']);
+  assert.equal(letterGrade(85), 'B');
+  assert.equal(letterGrade(null), '—');
 });
