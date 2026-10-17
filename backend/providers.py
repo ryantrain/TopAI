@@ -51,7 +51,7 @@ def parse_object(raw):
     return result
 
 
-async def ask(prompt, instruction, model=None, provider='openai', with_usage=False, schema=None):
+async def ask(prompt, instruction, model=None, provider='openai', with_usage=False, schema=None, attachment=None, max_tokens=8192, timeout=90):
     if provider not in KEYS:
         raise ValueError('Unsupported model provider')
     if attachment and provider != 'gemini':

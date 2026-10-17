@@ -2,6 +2,7 @@
 
 import { ChevronDown } from 'lucide-react';
 import { letterGrade } from './model-metrics.mjs';
+import { Workstation } from './agents';
 
 const show = (v, f) => v === null || v === undefined ? '—' : f(v);
 
@@ -9,7 +10,7 @@ export function Recommendation({ pick, minimum, setMinimum, demo }) {
   if (!pick) return null;
   const w = pick.worker;
   return <section className="verdict" style={{ '--agent': w.color }}>
-    <img src={`/agents/${w.key}.png`} alt=""/>
+    <Workstation agent={w} state="done"/>
     <div>
       <small>{demo ? 'Practice result · simulated' : 'Recommendation'}</small>
       <h2>{pick.qualified ? `Use ${w.name}` : `Nobody reached ${minimum}%. ${w.name} came closest.`}</h2>
