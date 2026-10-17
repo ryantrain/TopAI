@@ -140,6 +140,12 @@ Cloud workers can be configured with `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANT
 - Dataset and benchmark criteria are locked after a run starts. Start a new session to change them.
 - Only upload educational material and student work you are permitted to process.
 
+### Worksheets
+
+Users only upload worksheets: PDFs, photos, Word, Excel, PowerPoint, or text files up to 10 MB each, several at a time. Behind the scenes the backend sends each file to Gemini (`GEMINI_API_KEY`; `GEMINI_CONVERT_MODEL`, falling back to `GEMINI_MODEL`), which extracts each question with one clear, short answer into question/answer data. The page never mentions the conversion. It uses the worksheet's answer key when there is one; answers it had to work out are counted per worksheet so users can check them. All-numeric answers use numeric scoring; anything else uses exact text matching, unless saved criteria choose another evaluation method. Setup and quota problems are logged on the server; the page shows a plain message.
+
+Every uploaded worksheet is saved to the worksheet menu next to **Run** and selected straight away; worksheets uploaded together are selected together. Tick one or more worksheets to combine them: questions alternate between worksheets so each round mixes them, and duplicates are dropped. Combined worksheets use numeric scoring only if every worksheet does. A selection needs at least 20 questions in total to run. **Forget** removes a worksheet from the menu. Saved worksheets survive **New session**; the selection is fixed once a session has run a round.
+
 The importer rejects duplicate questions to reduce holdout leakage. It cannot detect paraphrased duplicates or overlap between examples embedded in instructions and evaluation cases.
 
 ## Results
@@ -170,6 +176,9 @@ After settlement, a user may publish a hash of the round through a Phantom-signe
 - `PUT /api/benchmark` — validate and save benchmark criteria
 - `POST /api/dataset?filename=...&scoring=...` — upload a benchmark dataset
 - `DELETE /api/dataset` — remove the active dataset before a run
+- `POST /api/library/convert` — turn an uploaded worksheet into saved benchmark questions and select it
+- `PUT /api/library/selection` — choose which saved worksheets make up the dataset
+- `GET /api/library/{id}` and `DELETE /api/library/{id}` — export a worksheet's questions, or forget it
 - `POST /api/rounds` — run 1–10 experiment rounds
 - `POST /api/reset` — start a new active session
 - `GET /api/history` — list archived completed rounds
