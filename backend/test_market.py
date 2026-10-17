@@ -84,12 +84,32 @@ class MarketCheck(unittest.TestCase):
         self.assertFalse(exchange.market['running'])
         self.assertEqual(exchange.market['phase'], 'error')
 
+    def test_multiple_rounds_stop_after_a_failure(self):
+        exchange.market.clear()
+        exchange.market.update(exchange.initial_state())
+        calls = 0
+        running_states = []
+
+        async def fail_on_second_round():
+            nonlocal calls
+            calls += 1
+            running_states.append(exchange.market['running'])
+            exchange.market.update(running=False, phase='error' if calls == 2 else 'complete')
+
+        with patch.object(exchange, 'run_round', fail_on_second_round):
+            asyncio.run(exchange.run_rounds(3))
+        self.assertEqual(calls, 2)
+        self.assertEqual(running_states, [True, True])
+
     def test_api_boundaries_and_overlap(self):
         exchange.market.clear()
         exchange.market.update(exchange.initial_state())
+        self.assertEqual(exchange.StartRequest(rounds=3).rounds, 3)
         with TestClient(exchange.app) as client:
             self.assertEqual(client.get('/api/market').status_code, 200)
             self.assertEqual(client.post('/api/rounds', json={'mode': 'invalid'}).status_code, 422)
+            self.assertEqual(client.post('/api/rounds', json={'mode': 'demo', 'rounds': 11}).status_code, 422)
+            self.assertEqual(client.post('/api/rounds', json={'mode': 'live', 'rounds': 2}).status_code, 400)
             exchange.market['running'] = True
             self.assertEqual(client.post('/api/rounds', json={'mode': 'demo'}).status_code, 409)
             self.assertEqual(client.post('/api/reset').status_code, 409)
