@@ -24,17 +24,16 @@ def configuration():
             raise ValueError
     except ValueError:
         raise ValueError('WORKER_COST_PER_1K_TOKENS must contain three nonnegative USD rates or blank entries') from None
-    trader = os.getenv('TRADER_PROVIDER', 'gemini').strip().lower()
-    analyst = os.getenv('ANALYST_PROVIDER', 'gemini').strip().lower()
-    if len(workers) != 3 or any(p not in KEYS for p in workers + [trader, analyst]):
-        raise ValueError('Choose exactly three WORKER_PROVIDERS and supported trader/analyst providers: openai, gemini, anthropic, ollama')
-    return dict(cost_per_1k_tokens=rates, workers=[dict(provider=p, model=models[i] if i < len(models) and models[i] else model_for(p)) for i, p in enumerate(workers)],
-                trader=dict(provider=trader, model=os.getenv('TRADER_MODEL') or model_for(trader)),
-                analyst=dict(provider=analyst, model=os.getenv('ANALYST_MODEL') or model_for(analyst)))
+    if len(workers) != 3 or any(p not in KEYS for p in workers):
+        raise ValueError('Choose exactly three WORKER_PROVIDERS: openai, gemini, anthropic, ollama')
+    # Traders and the analyst are seeded, so only the workers and the evaluator need a provider.
+    return dict(cost_per_1k_tokens=rates, evaluator=dict(provider='gemini', model=model_for('gemini')),
+                workers=[dict(provider=p, model=models[i] if i < len(models) and models[i] else model_for(p)) for i, p in enumerate(workers)])
 
 
 def readiness(config):
-    providers = {s['provider'] for s in config['workers'] + [config['trader'], config['analyst']]}
+    # The evaluator is always Gemini, so its key is required for every live run.
+    providers = {s['provider'] for s in config['workers'] + [config['evaluator']]}
     return [KEYS[p] for p in sorted(providers) if KEYS[p] and not os.getenv(KEYS[p])]
 
 

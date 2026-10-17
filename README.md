@@ -13,24 +13,24 @@ Local Ollama turns it into benchmark metrics and task instructions
    ↓
 User reviews and saves the criteria + uploads the dataset
    ↓
-┌─ one stage: a batch of 10 questions ─────────────────────┐
+┌─ one round = one batch of questions (20 by default) ─────┐
 │ The batch goes to all 3 demo agents concurrently;        │
-│ each agent answers all 10 in one call                    │
+│ each agent answers the whole batch in one call           │
 │   ↓                                                      │
-│ Each agent's 10 answers go to Gemini in ONE call, with   │
-│ the reference answers; Gemini returns correct /          │
-│ not correct with a reason for each                       │
+│ Each agent's answers go to Gemini in ONE call, with the  │
+│ reference answers; Gemini returns correct / not correct  │
+│ with a reason for each                                   │
 │   ↓                                                      │
-│ The Python backend stores the 30 verdicts and updates    │
-│ the UI graph and metrics                                 │
+│ The Python backend stores the verdicts and updates the   │
+│ UI graph and metrics                                     │
 └──────────────────────────────────────────────────────────┘
-   ↓   (a round runs two stages: 10 public, then 10 holdout)
+   ↓   (the next round draws the next unused batch)
 Final accuracy, speed, token efficiency, cost estimates, and best agent
 ```
 
 The planner does not create ground truth. The uploaded dataset supplies the evaluation questions and reference answers. Users review and save the generated benchmark criteria before a run.
 
-Grading is batched on purpose, to stay inside Gemini's rate limits. One round makes **6 Gemini calls** — one per agent per stage, 10 answers each, 3 of them in flight at a time — not one call per answer. Scores and metrics therefore advance at the end of each stage, twice per round, rather than continuously; the price chart gains its points at the public stage, on each trade, and at settlement.
+Grading is batched on purpose, to stay inside Gemini's rate limits. One round makes **3 Gemini calls** — one per agent, the whole batch of answers each, all 3 in flight at a time — not one call per answer. Scores and metrics therefore advance once per round, when the batch is graded, rather than continuously; the price chart gains its points at the public stage, on each trade, and at settlement.
 
 ## Integral-test workflow
 
@@ -42,7 +42,15 @@ Grading is batched on purpose, to stay inside Gemini's rate limits. One round ma
 6. Each stage runs as a batch: the three agents each answer all 10 questions, Gemini grades each agent's 10 answers in a single call, and the backend stores the verdicts and updates the graph and metrics.
 7. Inspect each model's answers, evaluation results, accuracy, response time, token efficiency, estimated cost, and overall ranking.
 
-Each round uses 20 examples: 10 public questions followed by 10 unused holdout questions. Reference answers never enter worker prompts.
+Each round grades one unused batch of questions. The batch is 20 by default; set `batch_size` (1–50) in the saved execution plan to change it. Reference answers never enter worker prompts.
+
+Size the dataset to a whole multiple of the batch, or the remainder is never used: 99 questions at a batch of 20 runs 4 rounds and strands 19 questions, while 100 runs 5 rounds and strands none.
+
+| questions | batch | rounds | Gemini calls |
+| --- | --- | --- | --- |
+| 100 | 20 | 5 | 15 |
+| 100 | 25 | 4 | 12 |
+| 99 | 20 | 4 | 12 (19 questions unused) |
 
 For numeric integral answers, a JSON dataset can look like this:
 
@@ -132,11 +140,6 @@ GEMINI_MODEL=gemini-2.0-flash
 WORKER_PROVIDERS=ollama,ollama,ollama
 WORKER_MODELS=qwen2.5:7b,llama3.1:8b,mistral:7b
 
-TRADER_PROVIDER=ollama
-TRADER_MODEL=qwen2.5:7b
-ANALYST_PROVIDER=ollama
-ANALYST_MODEL=qwen2.5:7b
-
 DATABASE_URL=
 ```
 
@@ -159,7 +162,7 @@ Users only upload worksheets: PDFs, photos, Word, Excel, PowerPoint, or text fil
 
 Every uploaded worksheet is saved to the worksheet menu next to **Run** and selected straight away; worksheets uploaded together are selected together. Tick one or more worksheets to combine them: questions alternate between worksheets so each round mixes them, and duplicates are dropped. Combined worksheets use numeric scoring only if every worksheet does. A selection needs at least 20 questions in total to run. **Forget** removes a worksheet from the menu. Saved worksheets survive **New session**; the selection is fixed once a session has run a round.
 
-The importer rejects duplicate questions to reduce holdout leakage. It cannot detect paraphrased duplicates or overlap between examples embedded in instructions and evaluation cases.
+The importer rejects duplicate questions so the same question is not graded twice across rounds. It cannot detect paraphrased duplicates or overlap between examples embedded in instructions and evaluation cases.
 
 ## Results
 
@@ -172,11 +175,11 @@ The dashboard reports:
 - an overall relative score across the selected worker lineup;
 - the underlying questions, answers, and Gemini's reason for each verdict.
 
-These update at the end of each stage, so twice per round. Timing and token figures cover the demo agents only; Gemini's grading latency and tokens are excluded.
+These update once per round, when the batch is graded. Timing and token figures cover the demo agents only; Gemini's grading latency and tokens are excluded.
 
 Results apply only to the uploaded dataset, saved criteria, configured models, Gemini's judgment, and run conditions. They are not universal model rankings. Demo mode uses seeded simulated answers, token counts, and timings and does not establish real model performance.
 
-The existing virtual market remains an experimental visualization layer: trading agents react to public benchmark results before the holdout reveal. It is separate from the direct model-comparison metrics and should not be treated as a financial product or as evidence that a trading strategy is valid.
+The existing virtual market remains an experimental visualization layer: seeded trading strategies react to each round's benchmark result. They are deterministic rules, not model calls, so they cost no tokens. Since the holdout stage is gone, they settle against the score they already saw, so the market carries no forecasting risk and its P&L is not meaningful. It is separate from the direct model-comparison metrics and should not be treated as a financial product or as evidence that a trading strategy is valid.
 
 ## Storage and optional receipts
 
@@ -218,7 +221,7 @@ The automated tests mock external model providers, databases, wallets, and Solan
 | Owner | Scope |
 | --- | --- |
 | Worker / benchmark | `benchmark`, `ask`, GSM8K loading and numeric grading in `backend/main.py` |
-| Trading agents | `trading` and trader prompts in `backend/main.py` |
+| Trading agents | `trading` and the seeded strategies in `backend/main.py` |
 | Market / API | `execute_order`, `settle`, SQLite persistence, FastAPI routes |
 | Dashboard | `app/page.js`, `app/globals.css`, Recharts |
 
@@ -236,7 +239,7 @@ Only batches with valid token and timing measurements for every worker are compa
 
 In Overview, upload a UTF-8 CSV, JSON array, or JSONL file with `question` and `answer` fields. A CSV template is available in the dashboard. Supply 20–2,000 distinct questions, up to 2 MB. Select exact text matching (case-sensitive, surrounding whitespace ignored) or numeric matching (absolute tolerance 0.000001). Open-ended prose needs a different evaluator and is not supported by these scoring rules.
 
-Every round consumes 20 sequential examples: 10 public benchmark questions and 10 fresh holdout questions. All workers receive the same questions without answer keys. Dataset changes require a new session to keep comparisons consistent. Uploads persist in the configured database and completed-round archives; resetting clears the active dataset but retains archives. Live runs send questions to configured AI providers; demo results remain simulated. This is a local shared workspace without user isolation or authentication.
+Every round consumes one unused batch of questions, 20 by default. All workers receive the same questions without answer keys. Dataset changes require a new session to keep comparisons consistent. Uploads persist in the configured database and completed-round archives; resetting clears the active dataset but retains archives. Live runs send questions to configured AI providers; demo results remain simulated. This is a local shared workspace without user isolation or authentication.
 
 ### Cost per 1,000 tokens
 

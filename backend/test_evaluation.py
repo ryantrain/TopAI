@@ -14,7 +14,7 @@ from backend import datasets, evaluation, providers
 
 class EvaluationCheck(unittest.TestCase):
     def test_generated_items_count_and_saved_metadata(self):
-        plan = evaluation.BenchmarkPlan(goal='Generate ideas', method='items', output_unit='ideas').model_dump()
+        plan = evaluation.BenchmarkPlan(goal='Generate ideas', method='items', output_unit='ideas', batch_size=10).model_dump()
         answers = [['Solar oven', ' solar   OVEN ', 'Rain barrel'], 'not json', [], [True], '["One", "Two"]']
         grades = asyncio.run(evaluation.grade([dict(answer='reference')] * len(answers), answers, plan))
         self.assertEqual([g['output_count'] for g in grades], [2, 0, 0, 0, 2])
@@ -68,7 +68,7 @@ class EvaluationCheck(unittest.TestCase):
             evaluation.strict_json('{"a":1e999}')
 
     def test_evaluator_contract_and_identity_blinding(self):
-        plan = evaluation.BenchmarkPlan(goal='Summarize faithfully', method='rubric', rubric='No invented details').model_dump()
+        plan = evaluation.BenchmarkPlan(goal='Summarize faithfully', method='rubric', rubric='No invented details', batch_size=10).model_dump()
         mock = AsyncMock(return_value=dict(grades=[dict(id=0, correct=False, score=84, reason='Missing key action')]))
         with patch.object(providers, 'ask', mock):
             grade = asyncio.run(evaluation.grade([dict(question='Ticket', answer='Expected action')], ['Summary'], plan))[0]
@@ -144,7 +144,7 @@ class EvaluationCheck(unittest.TestCase):
         dataset = exchange.market['dataset']
         for p in dataset['problems']:
             p['answer'] = '10'
-        plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='numeric', tolerance=1).model_dump()
+        plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='numeric', tolerance=1, batch_size=10).model_dump()
         dataset['benchmark_plan'] = plan
         state = exchange.market
         state.update(round=1, mode='live')
@@ -155,13 +155,16 @@ class EvaluationCheck(unittest.TestCase):
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
         self.assertNotIn(plan['goal'], mock.call_args.args[1])
         self.assertNotIn('answer', mock.call_args.args[0])
-        # Demo must never reach the evaluator, so a simulated run cannot cost anything.
+        # The demo agents are simulated, but Gemini still grades them, so the verdicts are real.
         state['mode'] = 'demo'
-        with patch.object(providers, 'ask', AsyncMock(side_effect=AssertionError('demo called the evaluator'))):
+        graded_in_live = gemini.call_count
+        with patch.object(providers, 'ask', gemini):
             asyncio.run(exchange.benchmark(state))
+        self.assertEqual(gemini.call_count - graded_in_live, 3)
+        self.assertTrue(all(w['provider'] == 'simulated' for w in state['workers']))
 
     def test_missing_local_model_prevents_paid_worker_calls(self):
-        plan = evaluation.BenchmarkPlan(goal='Summarize', method='rubric', rubric='Preserve facts').model_dump()
+        plan = evaluation.BenchmarkPlan(goal='Summarize', method='rubric', rubric='Preserve facts', batch_size=10).model_dump()
         exchange.market['dataset']['benchmark_plan'] = plan
         with TestClient(exchange.app) as client, patch.dict(os.environ, dict(WORKER_PROVIDERS='ollama,ollama,ollama', GEMINI_API_KEY='test-key')), \
                 patch.object(providers, 'readiness', return_value=[]), \
@@ -172,9 +175,10 @@ class EvaluationCheck(unittest.TestCase):
             ask.assert_not_called()
 
     def test_live_run_without_evaluator_key_makes_no_worker_calls(self):
-        exchange.market['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact').model_dump()
+        exchange.market['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact', batch_size=10).model_dump()
+        # Real readiness must catch the missing evaluator key, so it is deliberately not patched.
         with TestClient(exchange.app) as client, patch.dict(os.environ, {'GEMINI_API_KEY': ''}), \
-                patch.object(providers, 'readiness', return_value=[]), patch.object(exchange, 'ask', AsyncMock()) as ask:
+                patch.object(exchange, 'ask', AsyncMock()) as ask:
             response = client.post('/api/rounds', json=dict(mode='live'))
             self.assertEqual(response.status_code, 400)
             self.assertIn('GEMINI_API_KEY', response.json()['detail'])
@@ -183,7 +187,7 @@ class EvaluationCheck(unittest.TestCase):
     def test_live_run_keeps_evaluator_usage_out_of_worker_metrics(self):
         state = exchange.market
         state.update(mode='live', round=1)
-        plan = evaluation.BenchmarkPlan(goal='Summarize faithfully', method='rubric', rubric='No invented facts').model_dump()
+        plan = evaluation.BenchmarkPlan(goal='Summarize faithfully', method='rubric', rubric='No invented facts', batch_size=10).model_dump()
         state['dataset']['benchmark_plan'] = plan
         worker = AsyncMock(return_value=dict(answers=['summary'] * 10, _total_tokens=100))
         gemini = AsyncMock(return_value=dict(grades=[dict(id=i, correct=i < 8, score=90 if i < 8 else 60, reason='Evidence checked') for i in range(10)]))
@@ -250,7 +254,7 @@ class EvaluationCheck(unittest.TestCase):
         dataset = exchange.market['dataset']
         for p in dataset['problems']:
             p['answer'] = '10'
-        protocol = evaluation.BenchmarkProtocol(method='numeric', instructions='Grade each paper.',
+        protocol = evaluation.BenchmarkProtocol(method='numeric', batch_size=10, instructions='Grade each paper.',
             selection='shuffled', repetitions=3, tolerance=1).model_dump()
         # The execution string overrides conflicting legacy fields.
         body = dict(goal='Find a reliable grader', method='exact', repetitions=1,
@@ -285,7 +289,9 @@ class EvaluationCheck(unittest.TestCase):
                 self.assertAlmostEqual(worker['diagnostics']['grading_bias'], -1)
                 self.assertEqual([a['attempt'] for a in worker['answers']], [1]*10 + [2]*10 + [3]*10)
             calls.clear()
-            asyncio.run(exchange.benchmark(state, reveal=True))
+            # The next round must draw a disjoint batch, which is what the holdout used to guarantee.
+            state['round'] = 2
+            asyncio.run(exchange.benchmark(state))
             self.assertTrue(public.isdisjoint(calls[0][0]))
         self.assertEqual(evaluation.select_problems(dataset, 0, response.json()), evaluation.select_problems(dataset, 0, response.json()))
         self.assertEqual(dataset['problems'][0]['question'], 'Input 0')
@@ -333,7 +339,7 @@ class EvaluationCheck(unittest.TestCase):
     def test_missing_usage_on_a_repeat_is_not_reported_as_complete(self):
         state = exchange.market
         state.update(round=1, mode='live')
-        state['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', repetitions=2).model_dump()
+        state['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', repetitions=2, batch_size=10).model_dump()
         calls = {}
         async def respond(*args, **kwargs):
             model = kwargs['model']

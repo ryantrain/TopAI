@@ -45,7 +45,7 @@ export default function BenchmarkPicker({ market, mode, refresh, onError }) {
         <button type="button" className="picker-forget" aria-label={`Forget ${f.name}`} disabled={pending || (locked && selection.includes(f.id))} onClick={() => forget(f)}>Forget</button>
       </div>)}
       {!files.length && <p className="picker-note">No worksheets yet. Upload one in “Your niche. Your benchmark.” below.</p>}
-      <p className="picker-foot">{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'round' : 'rounds'} available${count < 20 ? ` · add ${20 - count} more to run` : ''}` : 'Each round uses 20 questions: 10 public and 10 held out.'}</p>
+      <p className="picker-foot">{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'round' : 'rounds'} available${count < 20 ? ` · add ${20 - count} more to run` : ''}` : 'Each round grades one batch of questions, 20 by default.'}</p>
     </div>}
   </div>;
 }

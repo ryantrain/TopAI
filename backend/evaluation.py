@@ -9,6 +9,13 @@ from pydantic import BaseModel, Field, model_validator
 
 from backend import datasets, providers
 
+# Questions graded in one evaluator call. One call per agent per round, so this is the round size.
+DEFAULT_BATCH = 20
+
+
+def batch_size(plan):
+    return plan.get('batch_size', DEFAULT_BATCH) if plan else DEFAULT_BATCH
+
 
 class BenchmarkProtocol(BaseModel):
     model_config = {"extra": "forbid"}
@@ -16,6 +23,7 @@ class BenchmarkProtocol(BaseModel):
     procedure: str = Field(default="Test supplied examples against their references.", max_length=8000)
     selection: Literal["sequential", "shuffled"] = "sequential"
     repetitions: int = Field(default=1, ge=1, le=5, strict=True)
+    batch_size: int = Field(default=DEFAULT_BATCH, ge=1, le=50, strict=True)
     unsupported_requirements: list[str] = Field(default_factory=list, max_length=20)
     method: Literal['exact', 'numeric', 'json', 'rubric', 'items'] = 'exact'
     output_unit: str = Field(default='ideas', min_length=1, max_length=40)
@@ -238,16 +246,17 @@ def select_problems(dataset, start, plan):
     problems = list(dataset['problems'])
     if plan and plan.get('selection') == 'shuffled':
         random.Random(dataset['digest']).shuffle(problems)
-    return problems[start:start + 10]
+    return problems[start:start + batch_size(plan)]
 
 
 def diagnostics(answers, plan):
     metrics = {}
     repetitions = plan.get('repetitions', 1) if plan else 1
-    if repetitions > 1:
+    width = len(answers) // repetitions if repetitions else len(answers)
+    if repetitions > 1 and width:
         # Agreement measures exact output stability, not semantic equivalence.
-        stable = sum(len({json.dumps(a['answer'], sort_keys=True, ensure_ascii=False) for a in answers[i::10]}) == 1 for i in range(10))
-        metrics['repeat_agreement'] = stable * 10
+        stable = sum(len({json.dumps(a['answer'], sort_keys=True, ensure_ascii=False) for a in answers[i::width]}) == 1 for i in range(width))
+        metrics['repeat_agreement'] = round(100 * stable / width, 2)
     if plan and plan['method'] == 'numeric':
         from backend.main import number
         errors = []

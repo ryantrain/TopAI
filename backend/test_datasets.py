@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from backend.test_market import exchange
+from backend import evaluation
 from backend import datasets
 from fastapi.testclient import TestClient
 
@@ -31,10 +32,12 @@ class DatasetCheck(unittest.TestCase):
         state = exchange.initial_state()
         state.update(round=1, mode='live', dataset=datasets.parse_dataset(json.dumps(self.rows()).encode(), 'test.json', 'exact'))
         mock = AsyncMock(return_value=dict(answers=['niche-label'] * 10, _total_tokens=100))
-        with patch.object(exchange, 'ask', mock):
+        # Consecutive rounds must draw different questions, now that a round is a single batch.
+        with patch.object(evaluation, 'DEFAULT_BATCH', 10), patch.object(exchange, 'ask', mock):
             asyncio.run(exchange.benchmark(state))
             public = [a['question'] for a in state['workers'][0]['answers']]
-            asyncio.run(exchange.benchmark(state, reveal=True))
+            state['round'] = 2
+            asyncio.run(exchange.benchmark(state))
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
         self.assertTrue(set(public).isdisjoint(a['question'] for a in state['workers'][0]['answers']))
         self.assertTrue(all('niche-label' not in c.args[0] for c in mock.call_args_list))
@@ -70,7 +73,7 @@ class DatasetCheck(unittest.TestCase):
         config['cost_per_1k_tokens'] = [0.01, None, 0]
         state['configuration'] = config
         mock = AsyncMock(return_value=dict(answers=[7] * 10, _total_tokens=100))
-        with patch.object(exchange, 'ask', mock):
+        with patch.object(evaluation, 'DEFAULT_BATCH', 10), patch.object(exchange, 'ask', mock):
             asyncio.run(exchange.benchmark(state))
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
         self.assertIn(envelope['instructions'], mock.call_args_list[0].args[1])

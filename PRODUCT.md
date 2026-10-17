@@ -27,7 +27,7 @@ The current reference use case is integral mathematics for students and teachers
 5. The benchmark runs in batches of 10 questions. The three demo agents receive the same batch, without reference answers, concurrently, and each answers all 10 in one call.
 6. Each agent's batch of answers goes to Gemini in a single call together with the reference answers. Gemini returns a correct / not correct verdict with a reason for each answer. Gemini is the only evaluator; there are no separate judge agents.
 7. The Python backend stores the verdicts and updates the UI graph and metric panels.
-8. A round runs two such stages: 10 public questions, then 10 unused holdout questions. Further rounds consume the next batches until the dataset is exhausted.
+8. Each further round draws the next unused batch, until the dataset is exhausted.
 9. The dashboard shows the accumulated evidence and highlights the best-performing agent for this specific experiment.
 
 ## Reference Use Case: Integral Tests
@@ -44,7 +44,7 @@ The user supplies the source material and reference answers. Ollama may propose 
 
 ## Evaluation Model
 
-Each round uses 10 public examples and 10 fresh holdout examples. Every worker sees the same inputs. Reference answers remain outside worker prompts.
+Each round grades one unused batch of questions, 20 by default and configurable from 1 to 50 in the saved plan. Every worker sees the same inputs. Reference answers remain outside worker prompts. A dataset should be a whole multiple of the batch size, because a trailing partial batch is never run.
 
 Evaluation is a single mechanism: Gemini receives the question, the agent's answer, the reference answer, and the saved criteria, and decides whether the answer is correct. The previous set of selectable evaluation methods and judge agents is gone.
 
@@ -56,7 +56,7 @@ The saved criteria inform that decision rather than switching evaluators:
 
 Ollama's role is confined to turning the user's request into those metrics before the run. Python's role is to store each verdict and update the interface.
 
-Grading is batched to stay within Gemini's rate limits: one call per agent per stage, 10 answers each, three calls in flight at a time, for 6 Gemini calls per round. The interface therefore advances at stage boundaries, twice per round, not after each individual answer. The price chart is drawn at the public stage, on each trade, and at settlement.
+Grading is batched to stay within Gemini's rate limits: one call per agent, carrying that agent's whole batch of answers, three calls in flight at a time, for 3 Gemini calls per round. The interface therefore advances once per round, not after each individual answer. The price chart is drawn when the batch is graded, on each trade, and at settlement.
 
 The product reports accuracy or pass rate, elapsed time, provider-reported token efficiency, optional operator-supplied cost estimates, and an overall score relative to the selected lineup. Users can inspect individual questions, answers, and grading evidence.
 
@@ -74,12 +74,12 @@ The product reports accuracy or pass rate, elapsed time, provider-reported token
 
 - Plain-language task entry before or after dataset upload.
 - Local Ollama benchmark-metric drafting from the user's request.
-- Gemini verdicts on every answer, requested one batch per agent per stage.
+- Gemini verdicts on every answer, requested as one batch per agent per round.
 - Stage-by-stage UI updates driven by the Python backend.
 - CSV, JSON, and JSONL imports with 20–2,000 examples.
 - Three configurable worker slots using Ollama, Gemini, OpenAI, or Anthropic.
 - A single Gemini-based evaluator covering numeric, exact, structured, and open-ended answers.
-- Public and holdout batches across 1–10 rounds.
+- One configurable question batch per round, across 1–10 rounds.
 - Per-model accuracy, speed, token efficiency, estimated cost, and answer inspection.
 - SQLite storage by default, with optional TigerData/PostgreSQL archives.
 - Optional Phantom-signed Solana Devnet receipts for completed rounds.
@@ -104,7 +104,7 @@ The product reports accuracy or pass rate, elapsed time, provider-reported token
 
 ## Privacy and Safety
 
-API keys remain in the backend environment. Cloud worker configurations send benchmark prompts to their providers. Evaluation always sends questions, agent answers, and reference answers to Gemini, so a run that must stay off third-party infrastructure is not supported in this version; the demo agents, planning, trading, and analysis can still be local. Users must have permission to process uploaded educational or student data and should remove identifying information when it is unnecessary for the experiment.
+API keys remain in the backend environment. Cloud worker configurations send benchmark prompts to their providers. Evaluation always sends questions, agent answers, and reference answers to Gemini, so a run that must stay off third-party infrastructure is not supported in this version; the demo agents and planning can still be local, and trading and the round summary make no model calls at all. Users must have permission to process uploaded educational or student data and should remove identifying information when it is unnecessary for the experiment.
 
 ## Success Criteria
 

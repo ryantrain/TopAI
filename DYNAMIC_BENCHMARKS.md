@@ -29,7 +29,8 @@ A dataset is a collection of test cases. A benchmark specification defines what 
 ```
 
 - `selection`: `sequential` or `shuffled`. Shuffling uses a fixed dataset-derived seed, without mutating the uploaded order. Public and settlement batches remain disjoint, and all models see the same examples.
-- `repetitions`: 1–5 separate calls per model on the same ten examples per stage. Every round uses 20 unique examples and `6 × repetitions` worker calls, plus the same number of Gemini evaluator calls (one per model per stage per attempt, each grading 10 answers). Repetitions multiply inference usage; worker tokens and time are summed across attempts. Scores are normalized over every attempted answer.
+- `batch_size`: 1–50 questions graded per round, 20 by default. A round is exactly one batch, so `questions ÷ batch_size` is how many rounds a dataset supports, and any remainder is never run.
+- `repetitions`: 1–5 separate calls per model on the same batch. Every round uses one unused batch and `3 × repetitions` worker calls, plus the same number of Gemini evaluator calls (one per model per attempt, each grading the whole batch). Repetitions multiply inference usage; worker tokens and time are summed across attempts. Scores are normalized over every attempted answer.
 - `method`, `tolerance`, `pass_score`, `rubric`: control actual grading. The need is used by the planner and passed to Gemini as evaluation context; it is no longer appended to worker prompts. Only `instructions` and existing dataset task instructions describe the worker's job.
 - `procedure`: explains the experiment for review. It does not execute arbitrary prose or rewrite Python. Changing backend behavior requires changing the validated settings. Additional algorithms require backend implementation.
 - `unsupported_requirements`: planner-reported measurements the backend cannot perform. Nonempty lists block saving; this is an LLM assessment, not proof that all needs were captured.
@@ -46,7 +47,7 @@ There is one evaluator: Gemini. The previous arrangement — a separate judge ag
 | --- | --- |
 | Turning the user's request into benchmark metrics | Local Ollama, once, before the run |
 | Answering each batch of 10 questions | The 3 demo agents, concurrently |
-| Deciding whether an answer is correct | Gemini, one batched call per agent per stage |
+| Deciding whether an answer is correct | Gemini, one batched call per agent per round |
 | Counting distinct generated items | Python (a count, not a verdict) |
 | Storing the verdict and updating the graph and metrics | Python backend |
 
@@ -72,12 +73,7 @@ To keep the three demo agents local (grading still goes to Gemini), configure th
 WORKER_PROVIDERS=ollama,ollama,ollama
 # Replace these three names with actual installed models from `ollama list`.
 WORKER_MODELS=YOUR_FIRST_MODEL,YOUR_SECOND_MODEL,YOUR_THIRD_MODEL
-TRADER_PROVIDER=ollama
-ANALYST_PROVIDER=ollama
 OLLAMA_MODEL=YOUR_LOCAL_DEFAULT_MODEL
-# Leave blank to use OLLAMA_MODEL for these roles:
-TRADER_MODEL=
-ANALYST_MODEL=
 # Required: Gemini decides whether every answer is correct.
 GEMINI_API_KEY=your-key
 GEMINI_MODEL=gemini-2.0-flash
@@ -97,7 +93,7 @@ The start endpoint checks that required local models are installed before issuin
 - Grading requires network calls to Gemini (6 per round). The benchmark cannot run offline, a Gemini outage fails the round, and agent answers plus reference answers are sent to Google.
 - One malformed batch costs all 10 of that agent's verdicts for the stage, and the round is rolled back rather than part-graded.
 - Changing a task specification requires a new session. All workers receive identical task instructions when a plan is saved; worker persona differences are not added to custom tasks.
-- Scores apply to the dataset and criteria you curated, not every task in that niche. The current importer checks duplicate questions; it cannot detect paraphrases or semantic overlap between public and holdout examples.
+- Scores apply to the dataset and criteria you curated, not every task in that niche. The current importer checks duplicate questions; it cannot detect paraphrases or semantic overlap between the batches of different rounds.
 - Model tags can change after downloading an update. Keep the same installed model versions when comparing runs.
 - Worker calls run concurrently. Local queueing, model loading, hardware contention, and warm-up affect observed wall time; measure on consistent hardware and repeat runs before drawing speed conclusions.
 - Evaluation is now a hosted model call. No embedding service or dynamic code execution was added. Optional Solana receipts still require a network request if used.
