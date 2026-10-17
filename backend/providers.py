@@ -51,13 +51,13 @@ def parse_object(raw):
     return result
 
 
-async def ask(prompt, instruction, model=None, provider='openai', with_usage=False, attachment=None, max_tokens=8192, timeout=90):
+async def ask(prompt, instruction, model=None, provider='openai', with_usage=False, schema=None):
     if provider not in KEYS:
         raise ValueError('Unsupported model provider')
     if attachment and provider != 'gemini':
         raise ValueError('File attachments are only supported for Gemini')
     if provider == 'ollama':
-        return await ask_local(prompt, instruction, model or model_for(provider), with_usage)
+        return await ask_local(prompt, instruction, model or model_for(provider), with_usage, schema)
     key = os.getenv(KEYS[provider])
     if not key:
         raise ValueError(f'Missing {KEYS[provider]}')
@@ -127,12 +127,12 @@ async def local_models_ready(models):
         raise ValueError('Download these local Ollama models first: ' + ', '.join(sorted(missing)))
 
 
-async def ask_local(prompt, instruction, model, with_usage=False):
+async def ask_local(prompt, instruction, model, with_usage=False, schema=None):
     if not model or 'cloud' in model.lower():
         raise ValueError('Choose an installed local Ollama model, without cloud routing.')
     async with httpx.AsyncClient(timeout=300, trust_env=False) as client:
         response = await client.post('http://127.0.0.1:11434/api/chat', json={
-            'model': model, 'stream': False, 'format': 'json', 'options': {'temperature': 0, 'num_predict': 8192},
+            'model': model, 'stream': False, 'format': schema if schema is not None else 'json', 'options': {'temperature': 0, 'num_predict': 8192},
             'messages': [{'role': 'system', 'content': instruction + ' Return only valid JSON.'},
                          {'role': 'user', 'content': prompt}],
         })

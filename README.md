@@ -198,4 +198,51 @@ npm run build
 
 The automated tests mock external model providers, databases, wallets, and Solana RPC calls. Real provider credentials, local Ollama models, TigerData connectivity, and Phantom/Devnet receipts require separate integration testing.
 
-See [DYNAMIC_BENCHMARKS.md](DYNAMIC_BENCHMARKS.md) for detailed scoring behavior and local-model limitations.
+## Four-person split
+
+| Owner | Scope |
+| --- | --- |
+| Worker / benchmark | `benchmark`, `ask`, GSM8K loading and numeric grading in `backend/main.py` |
+| Trading agents | `trading` and trader prompts in `backend/main.py` |
+| Market / API | `execute_order`, `settle`, SQLite persistence, FastAPI routes |
+| Dashboard | `app/page.js`, `app/globals.css`, Recharts |
+
+API: `GET /api/market`, `POST /api/rounds` with `{"mode":"demo","rounds":3}` or `{"mode":"live","rounds":3}` (1–10 rounds; defaults to 1), `POST /api/reset`, `GET /api/history`, `GET /api/receipt`, and `POST /api/receipt` with signature, session ID, and round. Next.js proxies `/api/*` to port 8000; override with `BACKEND_URL` if needed. FastAPI's local interactive API reference is at http://127.0.0.1:8000/docs.
+
+## Model comparison metrics
+
+The main chart switches between correct questions per 1,000 provider-reported total tokens (higher is better), batch response seconds per attempted question (lower is better), and an overall score. Tokens include input, cached input, output, and reasoning where reported by the provider. Provider tokenizers differ, so this is token efficiency rather than dollar cost. Timing includes provider/network latency and is amortized across ten questions, not measured individual question latency.
+
+Category winners include ties. Overall is 100 × the geometric mean of (correct questions/token ÷ the best worker’s rate) and (correct questions/second ÷ the best worker’s rate), with equal weight. Zero-correct workers cannot win overall. Summary comparisons pool matched batches in the selected rounds; chart points compare each batch separately. Overall scores are relative to the selected lineup and workload, not universal model ratings.
+
+Only batches with valid token and timing measurements for every worker are compared. Older histories remain visible elsewhere but are excluded from these metrics. Run new rounds to collect measurements. Demo token counts and timings are seeded simulations, not API measurements. The virtual-credit trading and redemption rules remain separate from the model metrics.
+
+### Custom benchmarks
+
+In Overview, upload a UTF-8 CSV, JSON array, or JSONL file with `question` and `answer` fields. A CSV template is available in the dashboard. Supply 20–2,000 distinct questions, up to 2 MB. Select exact text matching (case-sensitive, surrounding whitespace ignored) or numeric matching (absolute tolerance 0.000001). Open-ended prose needs a different evaluator and is not supported by these scoring rules.
+
+Every round consumes 20 sequential examples: 10 public benchmark questions and 10 fresh holdout questions. All workers receive the same questions without answer keys. Dataset changes require a new session to keep comparisons consistent. Uploads persist in the configured database and completed-round archives; resetting clears the active dataset but retains archives. Live runs send questions to configured AI providers; demo results remain simulated. This is a local shared workspace without user isolation or authentication.
+
+### Cost per 1,000 tokens
+
+Set `WORKER_COST_PER_1K_TOKENS=0.001,0.002,0.003` in the backend environment (illustrative rates only), in the same order as `WORKER_PROVIDERS` / `WORKER_MODELS`. These are operator-supplied **blended USD estimates**, not verified provider invoices. Account for the expected input/output mix, reasoning, caching, and discounts when setting them. Blank entries mean unknown; zero explicitly means free. Start a new session after changing rates. Demo and older unpriced batches show no dollar estimate. The table computes `sum(estimated batch USD) / sum(provider tokens) × 1,000` across matched batches and requires every selected batch to have pricing. Only worker benchmark calls are included.
+
+### Dynamic paper-grading benchmarks
+
+Download the paper grading JSON template from the dataset panel, replace its placeholder papers and marks, choose **Numeric answer**, and upload it. JSON can be an object with:
+
+- `instructions`: task, rubric, mark scale, output requirements, and separately curated marked calibration examples (up to 30,000 characters).
+- `tolerance`: nonnegative absolute mark difference counted as agreement, e.g. `1` for within one mark. Defaults to `0.000001`.
+- `examples`: 20–2,000 distinct `{ "question": "paper + assignment prompt", "answer": 8 }` evaluation examples. Answers are human reference marks.
+
+All three workers receive the same instructions and paper batches. Evaluation marks remain outside their prompts. Each round reserves ten unused papers for settlement. Keep calibration examples separate from evaluation papers; the importer detects duplicate evaluation questions but cannot detect semantic overlap with calibration text. Instructions, tolerance, raw-file digest, results, usage, and elapsed time persist with the session/archive.
+
+Compare agreement percentage, average batch seconds per paper, token efficiency, and estimated dollars per 1,000 tokens. Existing overall ranking balances correct answers per token and per second; it is not a validated measure of feedback quality. Set Minimum accuracy to identify the fastest model meeting your required agreement threshold, then compare cost. Tied speeds remain tied; if no model qualifies, no winner is recommended. Results apply to the uploaded papers and rubric; repeat with representative data before relying on a winner.
+
+For broader dynamic evaluation, the next step is criterion-level human labels and mean absolute mark error, plus confidence intervals across repeated runs. Free-form feedback quality requires separate human review or a calibrated judge; numeric mark agreement alone does not measure it. The current implementation evaluates marks and retains the existing three configured worker slots and market round lifecycle.
+
+### Goal-driven dynamic evaluation
+
+After uploading a dataset, describe your specific need and build a benchmark execution plan. Local Ollama produces a reviewable JSON string controlling example selection, repeated model calls, scoring, tolerance, and judge criteria. The backend validates and executes those settings and reports repeat agreement plus numeric error/bias where applicable. Unsupported operations are rejected. See [dynamic benchmarking and local setup](DYNAMIC_BENCHMARKS.md) for the plan contract, local configuration, and measurement limits.
+
+LaTeX integral question/answer datasets (including mixed symbolic and numeric answers) are recognized on upload. The app preserves the reference strings and automatically saves a local rubric judging plan that checks mathematical equivalence, integration constants, domains, and convergence. This overrides numeric fallback scoring for these datasets. Local Ollama must be available for live judging; judgments are model assessments rather than symbolic proofs. Extra `id` and `topic` fields are accepted but are not used in scoring.

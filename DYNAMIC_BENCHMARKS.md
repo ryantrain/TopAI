@@ -2,12 +2,41 @@
 
 A dataset is a collection of test cases. A benchmark specification defines what counts as success for those cases. The app now saves both together.
 
-1. Use the visible task text box before or after uploading at least 20 distinct question/reference-answer pairs.
-2. Describe the specific job, such as “summarize support tickets in two sentences, keeping the issue and requested action without inventing facts.”
-3. Click **Build benchmark from my request**. Paper-grading requests have a built-in local parser that needs no model server. Other requests use local Ollama, or you can fill in the specification manually. With a dataset uploaded, the planner receives its name, size, reference type, existing task instructions, and up to three bounded question samples. Evaluation answer keys are not sent to the planner. A draft entered before upload is retained when you upload; click Build again to tailor it to the new dataset.
-4. Review the shared task instructions, scoring method, rubric, and pass threshold; save them explicitly.
-5. Run a live benchmark. Every worker gets the same questions and task instructions. The reference answers stay out of worker prompts. Existing dataset-level instructions are also sent, so keep evaluation answer keys out of those instructions.
-6. Inspect individual answers and judge explanations. Criteria, reference answers, model configuration, and results persist in the local database and round archives. Criteria cannot change after the first round starts.
+1. Describe the job and what matters: for example, “Find a consistent paper grader; compare with human marks and measure whether it grades too harshly.”
+2. Click **Build benchmark execution plan**. Local Ollama receives the full goal and available backend operations. With a dataset uploaded it also receives the name, size, reference type, existing task instructions, and up to three bounded question samples. Reference answers are not sent to the planner. Paper grading has a template that the planner adapts to the full request; it no longer bypasses planning with a keyword-only parser.
+3. Review **How this benchmark will run**. Expand **Review or edit backend execution plan** for the complete JSON string. This is an executable configuration, not another prompt sent to workers.
+4. Upload real question/reference pairs and save the plan. If you drafted before uploading, build again to account for the uploaded dataset. Unsupported requirements appear in the draft and block saving until addressed.
+5. Run a live benchmark. The backend follows the saved selection, repetitions, scoring, tolerance, threshold, worker instructions, and judge rubric. References remain out of worker prompts.
+6. Inspect worker details for individual trials, repeat agreement, numeric error/bias, and judge explanations. Plans and measurements persist in the local database and round archives. Changing the plan requires a new session.
+
+## Executable plan contract
+
+`execution_spec` is a JSON string compiled and validated by `BenchmarkPlan` when saved. Its settings override any conflicting legacy top-level scoring fields. Unknown JSON operations, invalid repetitions, incompatible references, and malformed plans are rejected before running. The stored plan includes the canonical string and validated fields consumed by the runner. Existing saved plans continue with sequential selection and one repetition unless configured otherwise.
+
+```json
+{
+  "procedure": "Shuffle the uploaded papers reproducibly. Grade the same ten papers in three separate calls per model. Compare every mark with the human reference. Report pass rate, mean absolute mark error, signed grading bias, and exact repeat agreement. Reserve a disjoint ten-paper batch for settlement.",
+  "selection": "shuffled",
+  "repetitions": 3,
+  "unsupported_requirements": [],
+  "method": "numeric",
+  "output_unit": "answers",
+  "instructions": "Grade each supplied paper using its assignment and marking rubric. Return only its total numeric mark on the supplied scale.",
+  "rubric": "",
+  "tolerance": 1,
+  "pass_score": 80
+}
+```
+
+- `selection`: `sequential` or `shuffled`. Shuffling uses a fixed dataset-derived seed, without mutating the uploaded order. Public and settlement batches remain disjoint, and all models see the same examples.
+- `repetitions`: 1–5 separate calls per model on the same ten examples per stage. Every round uses 20 unique examples and `6 × repetitions` worker calls, plus rubric judge calls. Repetitions multiply inference usage; worker tokens and time are summed across attempts. Scores are normalized over every attempted answer.
+- `method`, `tolerance`, `pass_score`, `rubric`: control actual grading. The need is used by the planner and rubric judge; it is no longer appended to worker prompts. Only `instructions` and existing dataset task instructions describe the worker's job.
+- `procedure`: explains the experiment for review. It does not execute arbitrary prose or rewrite Python. Changing backend behavior requires changing the validated settings. Additional algorithms require backend implementation.
+- `unsupported_requirements`: planner-reported measurements the backend cannot perform. Nonempty lists block saving; this is an LLM assessment, not proof that all needs were captured.
+
+Repeated runs report the percentage of examples with exactly matching outputs across every trial, ignoring JSON object key order. This is output stability, not semantic consistency. Numeric runs also report valid numeric count, mean absolute error, and mean signed error (`response − reference`): positive bias means higher marks, negative means lower. Invalid numeric responses fail scoring and are excluded from error averages, with the valid count displayed. All diagnostics are descriptive; the market still settles using the configured pass percentage. Demo diagnostics are simulated.
+
+The planner can assemble supported experiments and rubric evaluations. It cannot add tools, generate authoritative answer keys, execute arbitrary code, or silently implement new scoring algorithms. Qualitative originality/usefulness can be judged against a rubric, but objective semantic novelty or population fairness measurements require additional backend support.
 
 ## Which evaluator?
 
@@ -18,7 +47,7 @@ A dataset is a collection of test cases. A benchmark specification defines what 
 | Structured extraction with a known JSON reference | Structural equality; ignores object key order, preserves arrays and types | Python |
 | Summaries, writing, semantic correctness, custom qualitative requirements | User-approved rubric, local judge score and explanation | Ollama on localhost |
 
-The free-text goal guides model instructions and the suggested rubric; it does not secretly change the scoring algorithm. For objective criteria, choose an explicit evaluator. For qualitative goals, review the generated rubric before saving. Python never executes generated code or uploaded scripts.
+The goal is compiled into explicit execution settings and scoring criteria. Review those settings before saving; prose alone does not change the runner. Python never executes generated code or uploaded scripts.
 
 For JSON evaluation, store the reference as JSON text in the dataset’s `answer` field (escape it inside a JSON dataset). Responses can contain actual JSON objects or JSON text. Numeric comparisons use the saved tolerance, overriding the original dataset tolerance for that plan.
 
@@ -26,7 +55,7 @@ Rubric evaluation grades each response from 0–100 using the saved goal, rubric
 
 ## Run locally
 
-Objective grading needs no new dependencies or model server. You can configure those fields manually without Ollama.
+Objective grading needs no new dependencies or model server. You can enter a supported JSON execution plan manually without Ollama.
 
 For drafting and subjective grading, install Ollama separately, start its server on `127.0.0.1:11434`, and download a local model with `ollama pull MODEL_NAME`. Set `OLLAMA_MODEL` and optionally `OLLAMA_JUDGE_MODEL` in the application’s `.env`. The default example is `qwen2.5:7b`; choose installed models appropriate to your hardware. The app does not install or download them automatically.
 
@@ -63,14 +92,14 @@ The start endpoint checks that required local models are installed before issuin
 
 ## Example: “I want the best one for grading papers”
 
-The text box is available before upload. The local parser recognizes paper/essay grading and creates worker instructions to grade actual papers against the supplied assignment and rubric. For numeric human marks it selects numeric agreement, using the dataset’s tolerance. If references are written feedback, or you explicitly request feedback/comments/explanations, it selects rubric evaluation instead. Your original request remains part of every worker’s instructions, including any extra constraints.
+The text box is available before upload. The planner uses a paper-grading template with shuffled examples and three repeated calls, adapting it to the full request. For numeric human marks it can choose numeric agreement; for written feedback it can choose rubric evaluation. Review the generated execution plan and tolerance before saving. The runner then carries out the saved settings rather than passing the original benchmark-selection request to the tested models.
 
 Upload the real papers, assignment prompts, and marking criteria as questions and human-assigned marks as reference answers. Review the allowed mark difference and save the plan to that dataset. Workers then actually grade these papers; they do not take a general math benchmark. The score measures agreement with human grades within your allowed error (or rubric pass rate for feedback). The app does not fabricate student papers or ground-truth human marks from the request alone.
 
 ## Saved criteria and task metrics
 
-After a successful save, the criteria panel displays **Criteria saved**, the dataset,
-scoring method, and server save time. Edits display **Unsaved changes** until saved.
+After a successful save, the panel displays **Execution plan saved**, the dataset,
+scoring method, and server save time. Edits display **Unsaved changes** until saved. Editing the need clears its draft plan so it must be rebuilt.
 The persisted plan survives page reloads. Replacing the dataset requires saving its
 criteria again; a new session clears the active dataset and plan.
 
