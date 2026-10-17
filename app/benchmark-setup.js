@@ -4,15 +4,11 @@ import { useEffect, useState } from 'react';
 import { readApiResponse } from './api-response.mjs';
 
 const methods = { exact: 'Exact answer / label', numeric: 'Numeric agreement', json: 'Structured JSON equality', rubric: 'Local rubric judge (Ollama)', items: 'Count distinct generated items' };
-function editableSpec(plan) {
-  if (plan?.execution_spec) return plan.execution_spec;
-  if (!plan) return '';
-  const { goal, judge_model, saved_at, ...protocol } = plan;
-  return JSON.stringify(protocol, null, 2);
-}
 
-export default function BenchmarkSetup({ dataset, locked, refresh, uploadError, selectedFile, onSaved }) {
-  const [plan, setPlan] = useState(() => ({ goal: dataset?.benchmark_plan?.goal || '', execution_spec: editableSpec(dataset?.benchmark_plan) }));
+export default function BenchmarkSetup({ dataset, locked, refresh, onSaved }) {
+  const [plan, setPlan] = useState(dataset?.benchmark_plan || {
+    goal: '', method: dataset?.scoring || 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: dataset?.tolerance ?? 0.000001, pass_score: 80,
+  });
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -20,39 +16,30 @@ export default function BenchmarkSetup({ dataset, locked, refresh, uploadError, 
   const savedPlan = JSON.stringify(dataset?.benchmark_plan || null);
   useEffect(() => {
     const saved = JSON.parse(savedPlan);
-    if (saved) { setPlan({ goal: saved.goal, execution_spec: editableSpec(saved) }); setDirty(false); }
-  }, [dataset?.digest, savedPlan]);
-  useEffect(() => { setMessage(''); setError(''); }, [dataset?.digest]);
-  function change(key, value) {
-    setPlan(p => ({ ...p, [key]: value, ...(key === 'goal' ? { execution_spec: '' } : {}) }));
-    setDirty(true); setMessage('');
-  }
-  let protocol = null;
-  try {
-    const parsed = JSON.parse(plan.execution_spec);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      && ['procedure', 'selection', 'method'].every(key => parsed[key] === undefined || typeof parsed[key] === 'string')
-      && ['repetitions', 'tolerance', 'pass_score'].every(key => parsed[key] === undefined || typeof parsed[key] === 'number')
-      && (parsed.unsupported_requirements === undefined || (Array.isArray(parsed.unsupported_requirements) && parsed.unsupported_requirements.every(item => typeof item === 'string')))) protocol = parsed;
-  } catch { /* Backend returns actionable JSON validation errors on save. */ }
-  const repetitions = protocol?.repetitions ?? 1;
+    if (saved) { setPlan(saved); setDirty(false); }
+    else setPlan(previous => previous.goal ? previous : { ...previous, method: dataset?.scoring || 'exact', tolerance: dataset?.tolerance ?? 0.000001 });
+  }, [dataset?.digest, dataset?.scoring, dataset?.tolerance, savedPlan]);
+  useEffect(() => {
+    setMessage(''); setError('');
+  }, [dataset?.digest]);
+  function change(key, value) { setPlan(p => ({ ...p, [key]: value })); setDirty(true); setMessage(''); }
 
   async function submit(suggest = false) {
     if (!suggest && !dataset) {
-      setError(uploadError ? `Dataset upload failed: ${uploadError}` : selectedFile ? `${selectedFile} has not been accepted as a dataset. Check the upload status below.` : 'Upload your task examples before saving the execution plan. Your draft will stay here.');
+      setError('Upload or select worksheets with at least 20 questions before saving benchmark criteria. Your draft will stay here.');
       return;
     }
     setPending(true); setError(''); setMessage('');
     try {
+      // Submit the edited fields instead of the backend’s previous serialized plan.
+      const { judge_model, execution_spec, ...body } = plan;
       const response = await fetch(suggest ? '/api/benchmark/suggest' : '/api/benchmark', {
         method: suggest ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(suggest ? { goal: plan.goal } : plan),
+        body: JSON.stringify(suggest ? { goal: plan.goal } : body),
       });
       const data = await readApiResponse(response);
-      setPlan({ goal: data.goal, execution_spec: editableSpec(data) });
-      setDirty(suggest);
-      if (suggest) setMessage('Execution plan drafted. Review how the tests will run, then save it for your dataset.');
-      else { onSaved(data); setMessage('Execution plan saved. The backend will use it for the next run.'); await refresh(); }
+      if (suggest) { setPlan(data); setDirty(true); setMessage('Task benchmark drafted. Review how answers are evaluated, then save.'); }
+      else { setPlan(data); setDirty(false); onSaved(data); setMessage('Benchmark criteria saved for these worksheets.'); await refresh(); }
     } catch (e) { setError(e.message); }
     finally { setPending(false); }
   }
@@ -60,33 +47,26 @@ export default function BenchmarkSetup({ dataset, locked, refresh, uploadError, 
   return <div className="benchmark-setup">
     <h3>What do you need this model to do?</h3>
     <div className="benchmark-save-status" role="status">
-      <strong>{dirty ? 'Unsaved changes' : dataset?.benchmark_plan ? 'Execution plan saved' : 'No execution plan saved'}</strong>
-      {dataset?.benchmark_plan && <p>Saved for {dataset.name}{dataset.benchmark_plan.saved_at ? ` on ${new Date(dataset.benchmark_plan.saved_at).toLocaleString()}` : ''}. {dirty ? 'Save your changes to apply them.' : 'This plan controls the next run and remains saved after reloading.'}</p>}
+      <strong>{dirty ? 'Unsaved changes' : dataset?.benchmark_plan ? 'Criteria saved' : 'Criteria not saved yet'}</strong>
+      {dataset?.benchmark_plan && <p>Saved for {dataset.name}{dataset.benchmark_plan.saved_at ? ` on ${new Date(dataset.benchmark_plan.saved_at).toLocaleString()}` : ''}. {methods[dataset.benchmark_plan.method]}{dataset.benchmark_plan.method === 'items' ? ` · ${dataset.benchmark_plan.output_unit || 'ideas'} / 1,000 tokens` : ''}. {dirty ? 'Save your changes to apply them.' : 'These criteria will be used in the next run and remain saved after reloading.'}</p>}
     </div>
     <fieldset disabled={locked || pending}>
-      <label>Your specific need<textarea maxLength={4000} value={plan.goal} onChange={e => change('goal', e.target.value)} placeholder="Find a consistent paper grader. Measure agreement with human marks and whether it grades too harshly."/></label>
-      <button type="button" className="text-button" disabled={!plan.goal.trim()} onClick={() => submit(true)}>{pending ? 'Working…' : 'Build benchmark execution plan'}</button>
-      <p>Your need becomes a plan for selecting examples, running repeated tests, and measuring results. Local Ollama drafts the plan; the backend validates and executes its settings. Upload real examples and reference answers to test against.</p>
-      {protocol && <div className="execution-summary" aria-live="polite">
-        <h4>How this benchmark will run</h4>
-        <p>{protocol.procedure || 'Compare uploaded examples using the settings below.'}</p>
-        <ul>
-          <li>{protocol.selection === 'shuffled' ? 'Reproducibly shuffle' : 'Use uploaded order for'} 10 examples per stage, with a separate 10-example settlement batch.</li>
-          <li>{repetitions} separate {repetitions === 1 ? 'call' : 'calls'} per model per stage. {repetitions > 1 ? 'Report exact output agreement across repeats.' : 'Each example is tested once.'}</li>
-          <li>Score using {methods[protocol.method] || protocol.method}.{protocol.method === 'numeric' ? ` Allowed absolute error: ${protocol.tolerance}. Report mean absolute error and signed grading bias for valid numeric answers.` : protocol.method === 'rubric' ? ` Pass threshold: ${protocol.pass_score}/100. Judge time and tokens are excluded from worker metrics.` : protocol.method === 'items' ? ' Counts measure quantity, not relevance or originality.' : ''}</li>
-          <li>{6 * repetitions} worker calls per round across three models, plus any rubric judge calls. Repeats consume additional tokens and time.</li>
-        </ul>
-        {!!protocol.unsupported_requirements?.length && <p role="alert">This plan cannot be saved because these measurements need additional backend support: {protocol.unsupported_requirements.join('; ')}. Revise your need and rebuild the plan.</p>}
-      </div>}
-      <details className="benchmark-details" open={!protocol && !!plan.execution_spec}>
-        <summary>Review or edit backend execution plan</summary>
-        <p>This JSON string is the executable specification. Settings control the backend; procedure explains them. Model-facing task instructions and judge criteria are included separately inside the plan. Unknown operations and invalid settings are rejected.</p>
-        <label>Benchmark execution plan<textarea rows={20} maxLength={40000} value={plan.execution_spec} onChange={e => change('execution_spec', e.target.value)} spellCheck={false} placeholder="Build a plan from your need, or enter a benchmark protocol as JSON."/></label>
+      <label>Your specific need<textarea maxLength={4000} value={plan.goal} onChange={e => change('goal', e.target.value)} placeholder="I want the best model for grading papers."/></label>
+      <button type="button" className="text-button" disabled={!plan.goal.trim()} onClick={() => submit(true)}>{pending ? 'Working…' : 'Build benchmark from my request'}</button>
+      <p>Describe the job in your own words, then review and save the generated benchmark.</p>
+      <details className="benchmark-details" open={!!plan.goal}><summary>Review evaluation and scoring</summary><div className="benchmark-fields">
+        <label>Evaluate using<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(methods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        {plan.method === 'items' && <label>Output items to count<input maxLength={40} value={plan.output_unit ?? 'ideas'} onChange={e => change('output_unit', e.target.value)} placeholder="ideas, suggestions, test cases"/></label>}
+        {plan.method === 'numeric' && <label>Allowed absolute error<input type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))}/></label>}
+        {plan.method === 'rubric' && <label>Passing judge score / 100<input type="number" min="1" max="100" step="1" value={plan.pass_score} onChange={e => change('pass_score', e.target.value === '' ? '' : Number(e.target.value))}/></label>}
+      </div>
+      {plan.method === 'rubric' && <label>Judge criteria<textarea maxLength={8000} value={plan.rubric} onChange={e => change('rubric', e.target.value)} placeholder="Define correctness, completeness, tone, and what constitutes a failure. The judge can compare against your reference answers."/></label>}
       </details>
-      <button type="button" className="primary-button" disabled={!plan.goal.trim() || !plan.execution_spec.trim() || !!protocol?.unsupported_requirements?.length} onClick={() => submit(false)}>{pending ? 'Working…' : 'Save benchmark execution plan'}</button>
+      <button type="button" className="primary-button" disabled={!plan.goal.trim()} onClick={() => submit(false)}>{pending ? 'Working…' : 'Save benchmark criteria'}</button>
     </fieldset>
-    <p role="status">{message || (dirty ? 'Draft only. Save the execution plan to apply it.' : '')}</p>
-    {locked && <p>The execution plan is fixed for this session. Start a new session to change it.</p>}
+    {plan.method === 'items' ? <p>Efficiency = distinct {plan.output_unit || 'items'} generated ÷ total tokens × 1,000. Each response must be a JSON array of nonempty strings. Duplicates within a response count once after ignoring case and whitespace. This measures quantity, not relevance or originality. The format pass rate measures responses containing at least one item.</p> : plan.method === 'rubric' ? <p>Rubric scores are estimates from a local model. Calibrate them against human judgments. The comparison reports the fraction of responses passing your threshold; judge time and tokens are excluded from worker metrics.</p> : <p>Scoring runs directly in Python. JSON comparison ignores object key order but preserves array order and value types. Numeric comparison uses your allowed error.</p>}
+    <p role="status">{message || (dirty ? 'Draft only. Upload worksheets and save the criteria to use this task benchmark.' : dataset?.benchmark_plan ? `Saved: ${dataset.benchmark_plan.goal} · ${methods[dataset.benchmark_plan.method]}` : 'Describe your task to build a benchmark from your worksheets.')}</p>
+    {locked && <p>Criteria are fixed for this session. Start a new session to change them.</p>}
     {error && <p role="alert" className="dataset-error">{error}</p>}
   </div>;
 }
