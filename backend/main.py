@@ -306,8 +306,17 @@ async def run_round():
         persist(market)
 
 
+async def run_rounds(rounds):
+    for _ in range(rounds):
+        market.update(running=True, error=None, phase='benchmark')
+        await run_round()
+        if market['phase'] == 'error':
+            break
+
+
 class StartRequest(BaseModel):
     mode: str = Field(default='demo', pattern='^(demo|live)$')
+    rounds: int = Field(default=1, ge=1, le=10)
 
 
 @app.get('/api/market')
@@ -367,6 +376,8 @@ async def start_round(request: StartRequest):
     global task
     if market['running']:
         raise HTTPException(409, 'A round is already running')
+    if request.mode == 'live' and request.rounds > 1:
+        raise HTTPException(400, 'Live mode runs one round at a time to avoid unintended API charges')
     if market['phase'] == 'interrupted':
         raise HTTPException(409, 'Start a new session after an interrupted round')
     if market['round'] and market['mode'] != request.mode:
@@ -384,8 +395,8 @@ async def start_round(request: StartRequest):
         market['configuration'] = config
     market.update(running=True, error=None, mode=request.mode, phase='benchmark')
     persist(market)
-    task = asyncio.create_task(run_round())
-    return {'status': 'started'}
+    task = asyncio.create_task(run_rounds(request.rounds))
+    return {'status': 'started', 'rounds': request.rounds}
 
 
 @app.post('/api/reset')
