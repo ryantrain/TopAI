@@ -19,7 +19,7 @@ In a second terminal:
 npm run dev
 ```
 
-Open http://localhost:3000. Click **Run a round**. Each click runs one complete benchmark → trade → reveal → settlement cycle. Demo rounds take about six seconds; repeat for a longer presentation. The dashboard polls every 1.2 seconds. Worker cards open the actual questions, answers, and grading. Sidebar views show trader theses and the event history.
+Open http://localhost:3000. Choose **1–10 rounds**, then click **Run**. Each round completes a benchmark → trade → reveal → settlement cycle. Demo rounds take about six seconds each. Live batches run the selected number of rounds and incur API charges for each round. The dashboard polls every 1.2 seconds. Worker cards open the actual questions, answers, and grading. Sidebar views show trader theses and the event history.
 
 Demo mode works without credentials. It uses seeded synthetic math problems and simulated worker answers and trading strategies, explicitly labeled throughout. It is not a claim about any model's real performance. Initial prices are 60 credits; history starts empty.
 
@@ -99,4 +99,4 @@ Checks cover order accounting, invalid orders, scoring, a complete demo cycle, s
 | Market / API | `execute_order`, `settle`, SQLite persistence, FastAPI routes |
 | Dashboard | `app/page.js`, `app/globals.css`, Recharts |
 
-API: `GET /api/market`, `POST /api/rounds` with `{"mode":"demo"}` or `{"mode":"live"}`, `POST /api/reset`, `GET /api/history`, `GET /api/receipt`, and `POST /api/receipt` with signature, session ID, and round. Next.js proxies `/api/*` to port 8000; override with `BACKEND_URL` if needed. FastAPI's local interactive API reference is at http://127.0.0.1:8000/docs.
+API: `GET /api/market`, `POST /api/rounds` with `{"mode":"demo","rounds":3}` or `{"mode":"live","rounds":3}` (1–10 rounds; defaults to 1), `POST /api/reset`, `GET /api/history`, `GET /api/receipt`, and `POST /api/receipt` with signature, session ID, and round. Next.js proxies `/api/*` to port 8000; override with `BACKEND_URL` if needed. FastAPI's local interactive API reference is at http://127.0.0.1:8000/docs.

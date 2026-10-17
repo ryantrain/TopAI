@@ -101,6 +101,39 @@ class MarketCheck(unittest.TestCase):
         self.assertEqual(calls, 2)
         self.assertEqual(running_states, [True, True])
 
+    def test_selected_round_count_in_both_modes(self):
+        async def no_wait(_):
+            pass
+
+        async def check(mode, count):
+            exchange.market.clear()
+            exchange.market.update(exchange.initial_state())
+            response = await exchange.start_round(exchange.StartRequest(mode=mode, rounds=count))
+            self.assertEqual(response['rounds'], count)
+            await exchange.task
+            self.assertEqual(exchange.market['round'], count)
+            self.assertEqual(len(exchange.market['settlements']), count)
+            self.assertEqual(exchange.market['phase'], 'complete')
+            self.assertFalse(exchange.market['running'])
+
+        # Keep the real round loop and settlement; replace external AI operations.
+        async def benchmark(state, reveal=False):
+            for worker in state['workers']:
+                worker['score'] = 80
+
+        async def no_operation(state):
+            pass
+
+        with patch.object(exchange.asyncio, 'sleep', no_wait), \
+             patch.object(exchange.providers, 'readiness', return_value=[]), \
+             patch.object(exchange, 'benchmark', benchmark), \
+             patch.object(exchange, 'trading', no_operation), \
+             patch.object(exchange, 'analyze', no_operation):
+            for mode in ('demo', 'live'):
+                for count in (1, 3, 10):
+                    with self.subTest(mode=mode, rounds=count):
+                        asyncio.run(check(mode, count))
+
     def test_api_boundaries_and_overlap(self):
         exchange.market.clear()
         exchange.market.update(exchange.initial_state())
@@ -109,7 +142,6 @@ class MarketCheck(unittest.TestCase):
             self.assertEqual(client.get('/api/market').status_code, 200)
             self.assertEqual(client.post('/api/rounds', json={'mode': 'invalid'}).status_code, 422)
             self.assertEqual(client.post('/api/rounds', json={'mode': 'demo', 'rounds': 11}).status_code, 422)
-            self.assertEqual(client.post('/api/rounds', json={'mode': 'live', 'rounds': 2}).status_code, 400)
             exchange.market['running'] = True
             self.assertEqual(client.post('/api/rounds', json={'mode': 'demo'}).status_code, 409)
             self.assertEqual(client.post('/api/reset').status_code, 409)
