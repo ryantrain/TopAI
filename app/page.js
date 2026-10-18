@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Play, RotateCcw } from 'lucide-react';
+import AgentSetup from './agent-setup';
 import AgentsPanel, { DEFAULT_ACTIVE, seatedAgents } from './agents';
 import Composer from './composer';
 import Sidebar from './sidebar';
@@ -28,6 +29,7 @@ export default function ClassroomPage() {
   const [active, setActive] = useState(DEFAULT_ACTIVE);
   const [selected, setSelected] = useState(null);
   const [minimum, setMinimum] = useState(80);
+  const [agentMode, setAgentMode] = useState(null);
   const latest = useRef(0);
   const closeSheet = useCallback(() => setSelected(null), []);
 
@@ -60,7 +62,7 @@ export default function ClassroomPage() {
         const { judge_model, saved_at, execution_spec, ...body } = plan;
         await readApiResponse(await fetch('/api/benchmark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
       }
-      const mode = session?.live_available ? 'live' : 'demo';
+      const mode = step === 0 ? (agentMode === 'live' ? 'live' : 'demo') : session?.mode || 'demo';
       const agent_ids = agents.filter(agent => agent.active).map(agent => agent.id);
       await readApiResponse(await fetch('/api/rounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, rounds, agent_ids }) }));
       const next = { startRound: session?.round || 0, rounds, mode };
@@ -76,22 +78,26 @@ export default function ClassroomPage() {
     try {
       await readApiResponse(await fetch('/api/reset', { method: 'POST' }));
       setRun(null); store('classRun', sessionStorage, null); setSelected(null);
+      setAgentMode(null);
       await refresh();
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
 
-  const agents = seatedAgents(session?.workers || [], active);
+  const step = session?.running || (busy && run) ? 1 : session?.round > 0 ? 2 : 0;
+  const visibleWorkers = step === 0 && agentMode === 'demo'
+    ? (session?.demo_workers || session?.workers || []).slice(0, 3)
+    : (session?.workers || []);
+  const agents = seatedAgents(visibleWorkers, active);
   // Only switched-on agents are included in the run request and comparison.
   const inClass = agents.filter(a => a.active);
   const classroom = agents;
   const countItems = session?.dataset?.benchmark_plan?.method === 'items';
-  const step = session?.running || (busy && run) ? 1 : session?.round > 0 ? 2 : 0;
   useEffect(() => { window.scrollTo({ top: 0 }); }, [step]);
 
   const rows = withAspects(modelMetrics(inClass, null, countItems));
   const pick = recommend(rows, minimum);
-  const liveRun = session?.mode === 'live' || (step === 0 && session?.live_available);
+  const liveRun = step === 0 ? agentMode === 'live' : session?.mode === 'live';
   const config = session?.configuration || session?.integrations?.configuration;
   const models = agents.map((agent, index) => liveRun
     ? [config?.workers?.[index]?.provider, config?.workers?.[index]?.model].filter(Boolean).join(' · ') || agent.model || 'API agent'
@@ -116,7 +122,7 @@ export default function ClassroomPage() {
     <Sidebar>
       <dl className="session">
         <div><dt>Worksheet</dt><dd>{session?.dataset ? `${session.dataset.name} · ${session.dataset.count} q` : 'None selected'}</dd></div>
-        <div><dt>Run</dt><dd>{step === 0 ? (session?.live_available ? `${agents.length} API agents ready` : 'Demo fallback ready') : liveRun ? 'API agents' : 'Demo fallback'}</dd></div>
+        <div><dt>Run</dt><dd>{step === 0 ? agentMode === 'live' ? `${agents.length} API agents ready` : agentMode === 'demo' ? '3 demo agents' : 'Choose agents' : liveRun ? 'API agents' : 'Demo agents'}</dd></div>
         <div><dt>Judge</dt><dd>{judgeLabel}</dd></div>
         <div><dt>Quizzes done</dt><dd>{session?.round || 0}</dd></div>
       </dl>
@@ -128,18 +134,22 @@ export default function ClassroomPage() {
         <header className="page-head">
           <div>
             <p className="eyebrow">{STEPS[step]}</p>
-            <h1>{step === 0 ? 'Choose your agents and set the task' : step === 1 ? `Quiz ${quiz} of ${total} · ${phaseTitle}` : 'How the agents did'}</h1>
-            <p>{step === 0 ? 'Switch on the agents you want to compare, describe the task below, and add a worksheet with questions and answers.'
+            <h1>{step === 0 ? agentMode ? 'Set the task' : 'Choose your agents' : step === 1 ? `Quiz ${quiz} of ${total} · ${phaseTitle}` : 'How the agents did'}</h1>
+            <p>{step === 0 ? agentMode ? 'Switch on the agents you want to compare, describe the task below, and add a worksheet with questions and answers.' : 'Connect real model APIs, or continue immediately with the three local demo agents.'
               : step === 1 ? `${phaseDetail}. Every agent gets the same questions without the answer key.`
               : goal || `${liveRun ? 'API' : 'Simulated'} answers judged against your worksheet by ${judgeLabel}.`}</p>
             {step === 1 && <div className="progress" role="progressbar" aria-label="Class progress" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress * 100}%` }}/></div>}
           </div>
+          {step === 0 && agentMode && <button type="button" className="quiet-button" disabled={busy} onClick={() => setAgentMode(null)}>Change agents</button>}
           {step === 2 && <button type="button" className="quiet-button" disabled={busy || remaining < 1} onClick={() => start({ rounds: 1, plan: null })} title={remaining < 1 ? 'No unused questions left' : undefined}><Play size={14}/>One more quiz</button>}
         </header>
 
         {(error || session?.error) && <div className="notice" role="alert">{error || session.error}</div>}
 
-        <div className="stage-grid">
+        {step === 0 && !agentMode ? <AgentSetup configuration={config}
+          onConfigured={async () => { setAgentMode('live'); await refresh(); }}
+          onDemo={() => setAgentMode('demo')}/>
+        : <div className="stage-grid">
           <div className="stage-left">
             <AgentsPanel agents={classroom} models={models} state={state} statuses={statuses} scores={scores} top={step === 2 ? pick?.worker.id : null}
               onToggle={step === 0 ? toggle : null} onOpen={step > 0 ? setSelected : null} compact={step > 0}/>
@@ -153,9 +163,9 @@ export default function ClassroomPage() {
             </details>
             <ReportCard rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>
           </div>}
-        </div>
+        </div>}
       </main>
-      <Composer session={session} step={step} busy={busy} refresh={refresh} onStart={start} onNewTask={newClass} onError={setError}/>
+      {(step > 0 || agentMode) && <Composer session={session} step={step} busy={busy} refresh={refresh} onStart={start} onNewTask={newClass} onError={setError}/>}
     </div>
     {selected && <WorksheetModal worker={agents.find(w => w.id === selected)} onClose={closeSheet}/>}
   </div>;

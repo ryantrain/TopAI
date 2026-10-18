@@ -14,10 +14,10 @@ Integral mathematics is the reference use case. The same benchmark plan supports
 
 ## Core journey
 
-1. The user adds worksheets and describes the task in plain language.
-2. The first send action requires local Ollama to draft an editable benchmark plan with instructions, scoring method, tolerance, and pass threshold.
-3. The user reviews the generated plan and sends again to save it and start the class.
-4. The app detects one to six configured agents and their required keys. A complete setup uses those agents; an incomplete setup falls back to three seeded simulated agents.
+1. The user configures one to six API/local agents with provider, model, and optional in-memory key, or explicitly chooses the three-agent demo.
+2. The user adds worksheets and describes the task in plain language.
+3. The first send action requires local Ollama to draft an editable benchmark plan with instructions, scoring method, tolerance, and pass threshold.
+4. The user reviews the generated plan and sends again to save it and start the class.
 5. Every agent receives the same 10 questions concurrently without reference answers.
 6. Gemini grades each completed batch when configured. If it is absent or fails, OpenAI grades it when configured; local Ollama is the final fallback. Deterministic item counting remains in Python.
 7. Python stores the verdicts and updates the live graph and metrics.
@@ -51,8 +51,8 @@ For symbolic integral answers, the default rubric asks the evaluator to recogniz
 
 - Plain-language benchmark requests.
 - Local Ollama benchmark-plan drafting.
-- Automatic selection of one to six configured API/local agents.
-- Three-agent simulated fallback when provider setup is incomplete.
+- Interactive setup for one to six API/local agents.
+- Explicit three-agent simulated demo option.
 - Gemini-first grading, then OpenAI, with local Ollama as the final fallback.
 - CSV, JSON, JSONL, PDF, image, Word, Excel, PowerPoint, and text worksheet intake.
 - Exact, numeric, JSON, item-count, and rubric methods.
@@ -71,7 +71,7 @@ For symbolic integral answers, the default rubric asks the evaluator to recogniz
 
 ## Privacy
 
-API keys remain in the backend environment. Cloud workers receive benchmark questions and instructions. The active cloud judge receives the questions, worker responses, reference answers, and rubric. If neither cloud judge is configured or succeeds, Ollama evaluation stays local. Worksheet conversion for unstructured files also uses Gemini. Users must have permission to process uploaded educational material and should remove unnecessary identifying information.
+API keys come from the backend environment or the setup screen. Keys entered in the UI stay in backend process memory, are never returned to the browser or stored in the database, and disappear when FastAPI restarts. Cloud workers receive benchmark questions and instructions. The active cloud judge receives the questions, worker responses, reference answers, and rubric. If neither cloud judge is configured or succeeds, Ollama evaluation stays local. Worksheet conversion for unstructured files also uses Gemini. Users must have permission to process uploaded educational material and should remove unnecessary identifying information.
 
 ## Success criteria
 

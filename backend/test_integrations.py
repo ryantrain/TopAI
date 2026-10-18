@@ -30,6 +30,38 @@ class IntegrationCheck(unittest.TestCase):
         self.assertEqual(request['input'], 'JSON input:\nquestion batch')
         self.assertEqual(request['text'], {'format': {'type': 'json_object'}})
 
+    def test_browser_agent_configuration_keeps_keys_private(self):
+        client = MagicMock()
+        client.responses.create = AsyncMock(return_value=SimpleNamespace(output_text='{"status":"ready"}', usage=None))
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=None)
+        first_key = 'runtime-key-one'
+        second_key = 'runtime-key-two'
+        try:
+            with patch.dict(os.environ, {}, clear=True):
+                config = providers.configure_agents([
+                    {'provider': 'openai', 'model': 'first-model', 'api_key': first_key},
+                    {'provider': 'openai', 'model': 'second-model', 'api_key': second_key},
+                ])
+                self.assertEqual(providers.readiness(config), [])
+                public = providers.public_configuration(config)
+                self.assertNotIn(first_key, repr(config) + repr(public))
+                self.assertNotIn(second_key, repr(config) + repr(public))
+                self.assertNotIn('credential_id', repr(public))
+                reused = providers.configure_agents([
+                    {'provider': 'openai', 'model': 'first-model-v2', 'api_key': ''},
+                    {'provider': 'openai', 'model': 'second-model-v2', 'api_key': ''},
+                ])
+                self.assertEqual(providers.readiness(reused), [])
+                credential_id = reused['workers'][1]['credential_id']
+                with patch('openai.AsyncOpenAI', return_value=context) as constructor:
+                    result = asyncio.run(providers.ask('question batch', 'Answer', provider='openai', credential_id=credential_id))
+                self.assertEqual(result, {'status': 'ready'})
+                constructor.assert_called_once_with(api_key=second_key, timeout=75, max_retries=1)
+        finally:
+            providers.clear_agent_configuration()
+
     def test_gemini_http_contract_and_invalid_output(self):
         real_client = httpx.AsyncClient
         def respond(request):
@@ -85,7 +117,7 @@ class IntegrationCheck(unittest.TestCase):
     def test_readiness_and_configuration(self):
         with patch.dict(os.environ, {}, clear=True):
             config = providers.configuration()
-            self.assertEqual(providers.readiness(config), ['GEMINI_API_KEY', 'OPENAI_API_KEY'])
+            self.assertEqual(providers.readiness(config), ['agent 1 OPENAI_API_KEY', 'agent 2 GEMINI_API_KEY', 'agent 3 OPENAI_API_KEY'])
             os.environ['WORKER_PROVIDERS'] = 'openai,invalid,gemini'
             with self.assertRaises(ValueError):
                 providers.configuration()

@@ -241,9 +241,22 @@ class StartRequest(BaseModel):
     agent_ids: list[str] = Field(default_factory=list, max_length=6)
 
 
+class AgentSlot(BaseModel):
+    provider: str = Field(pattern='^(openai|gemini|anthropic|ollama)$')
+    model: str = Field(min_length=1, max_length=200)
+    api_key: str = Field(default='', max_length=1000)
+
+
+class AgentSetup(BaseModel):
+    agents: list[AgentSlot] = Field(min_length=1, max_length=6)
+
+
 @app.get('/api/session')
 async def get_session():
     result = copy.deepcopy(session)
+    result['demo_workers'] = worker_rows()
+    if result.get('configuration'):
+        result['configuration'] = providers.public_configuration(result['configuration'])
     # The menu only needs file summaries; questions and answers stay on the server.
     result['library'] = [library.summary(entry) for entry in result['library']]
     selected = [e for e in session['library'] if e['id'] in session['selection']]
@@ -254,7 +267,8 @@ async def get_session():
     try:
         config = providers.configuration()
         missing = providers.readiness(config)
-        result['integrations'] = dict(configuration=config, missing_keys=missing,
+        result['integrations'] = dict(configuration=providers.public_configuration(config), missing_keys=missing,
+                                      agent_source='browser' if providers.runtime_configuration_active() else 'environment',
                                       evaluator=evaluation.evaluator(),
                                       database='TigerData / PostgreSQL' if os.getenv('DATABASE_URL') else 'SQLite')
         result['live_available'] = not missing
@@ -264,6 +278,23 @@ async def get_session():
         result['integrations'] = dict(error=str(error), evaluator=evaluation.evaluator(), database='TigerData / PostgreSQL' if os.getenv('DATABASE_URL') else 'SQLite')
         result['live_available'] = False
     return result
+
+
+@app.post('/api/agents')
+async def configure_agents(request: AgentSetup):
+    if session['running'] or session['round']:
+        raise HTTPException(409, 'Start a new class before changing agents')
+    try:
+        slots = [agent.model_dump() for agent in request.agents]
+        local_models = [slot['model'] for slot in slots if slot['provider'] == 'ollama']
+        if local_models:
+            await providers.local_models_ready(local_models)
+        config = providers.configure_agents(slots)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+    except Exception:
+        raise HTTPException(400, 'Could not reach local Ollama. Start it and install every selected Ollama model.') from None
+    return dict(configuration=providers.public_configuration(config), live_available=True)
 
 
 @app.get('/api/history')
@@ -293,7 +324,7 @@ async def start_round(request: StartRequest):
             raise HTTPException(400, str(error)) from None
         missing = providers.readiness(config)
         if missing:
-            raise HTTPException(400, 'Set ' + ', '.join(missing) + ' in .env and restart the backend')
+            raise HTTPException(400, 'Configure credentials for ' + ', '.join(missing))
         available = worker_rows(len(config['workers']))
         selected_ids = request.agent_ids or [w['id'] for w in available]
         if len(set(selected_ids)) != len(selected_ids) or any(worker_id not in {w['id'] for w in available} for worker_id in selected_ids):
