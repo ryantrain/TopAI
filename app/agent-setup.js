@@ -5,10 +5,24 @@ import { KeyRound, Loader2, Plus, Trash2 } from 'lucide-react';
 import { readApiResponse } from './api-response.mjs';
 
 const PROVIDERS = {
-  openai: { label: 'OpenAI', model: 'gpt-4.1-mini' },
+  openai: { label: 'OpenAI', model: 'gpt-6-luna' },
   gemini: { label: 'Gemini', model: 'gemini-2.5-flash' },
-  anthropic: { label: 'Anthropic', model: 'claude-sonnet-4-6' },
+  anthropic: { label: 'Anthropic', model: 'claude-haiku-5-5' },
   ollama: { label: 'Local Ollama', model: 'qwen2.5:7b' },
+};
+
+const CUSTOM_MODEL = '__custom__';
+const MODEL_OPTIONS = {
+  openai: [
+    ['gpt-6-luna', 'GPT-6 Luna'],
+    ['gpt-6-sol', 'GPT-6 Sol'],
+    ['gpt-6-astra', 'GPT-6 Astra'],
+  ],
+  anthropic: [
+    ['claude-haiku-5-5', 'Claude Haiku 5.5'],
+    ['claude-sonnet-5-5', 'Claude Sonnet 5.5'],
+    ['claude-opus-5-5', 'Claude Opus 5.5'],
+  ],
 };
 
 const blank = (provider = 'openai') => ({ provider, model: PROVIDERS[provider].model, api_key: '' });
@@ -24,6 +38,21 @@ export default function AgentSetup({ configuration, onConfigured, onDemo }) {
     setAgents(current => current.map((agent, i) => i === index
       ? key === 'provider' ? blank(value) : { ...agent, [key]: value }
       : agent));
+  }
+
+  function modelField(agent, index) {
+    const options = MODEL_OPTIONS[agent.provider];
+    if (!options) return <label><span>Model name</span><input required maxLength={200} value={agent.model}
+      onChange={e => change(index, 'model', e.target.value)} placeholder={PROVIDERS[agent.provider].model}/></label>;
+    const preset = options.some(([value]) => value === agent.model) ? agent.model : CUSTOM_MODEL;
+    return <label className="model-choice"><span>Model</span>
+      <select value={preset} onChange={e => change(index, 'model', e.target.value === CUSTOM_MODEL ? '' : e.target.value)}>
+        {options.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+        <option value={CUSTOM_MODEL}>Custom model…</option>
+      </select>
+      {preset === CUSTOM_MODEL && <input required maxLength={200} value={agent.model}
+        onChange={e => change(index, 'model', e.target.value)} placeholder="Enter exact model ID" aria-label="Custom model ID"/>}
+    </label>;
   }
 
   async function submit(event) {
@@ -51,7 +80,7 @@ export default function AgentSetup({ configuration, onConfigured, onDemo }) {
           <label><span>Provider</span><select value={agent.provider} onChange={e => change(index, 'provider', e.target.value)}>
             {Object.entries(PROVIDERS).map(([value, item]) => <option value={value} key={value}>{item.label}</option>)}
           </select></label>
-          <label><span>Model name</span><input required maxLength={200} value={agent.model} onChange={e => change(index, 'model', e.target.value)} placeholder={PROVIDERS[agent.provider].model}/></label>
+          {modelField(agent, index)}
           {agent.provider === 'ollama'
             ? <div className="local-key"><span>API key</span><small>Runs locally</small></div>
             : <label><span>API key</span><input type="password" autoComplete="off" maxLength={1000} value={agent.api_key} onChange={e => change(index, 'api_key', e.target.value)} placeholder="Paste key or use .env"/></label>}
