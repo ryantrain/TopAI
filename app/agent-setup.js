@@ -5,19 +5,19 @@ import { KeyRound, Loader2, Plus, Trash2 } from 'lucide-react';
 import { readApiResponse } from './api-response.mjs';
 
 const PROVIDERS = {
-  openai: { label: 'OpenAI', model: 'gpt-6-luna' },
+  openai: { label: 'OpenAI', model: 'gpt-4o-mini' },
   gemini: { label: 'Gemini', model: 'gemini-2.5-flash-lite' },
-  anthropic: { label: 'Anthropic', model: 'claude-haiku-5-5' },
+  anthropic: { label: 'Anthropic', model: 'claude-sonnet-4-6' },
   ollama: { label: 'Local Ollama', model: 'qwen2.5:7b' },
 };
 
 const CUSTOM_MODEL = '__custom__';
 const MODEL_OPTIONS = {
   openai: [
-    ['gpt-6-luna', 'GPT-6 Luna · budget'],
+    ['gpt-4o-mini', 'GPT-4o mini'],
   ],
   anthropic: [
-    ['claude-haiku-5-5', 'Claude Haiku 5.5 · budget'],
+    ['claude-sonnet-4-6', 'Claude Sonnet 4.6'],
   ],
 };
 
