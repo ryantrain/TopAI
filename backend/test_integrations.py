@@ -87,6 +87,24 @@ class IntegrationCheck(unittest.TestCase):
             providers.parse_provider_object('not JSON secret-response', 'openai', 'test-model')
         self.assertNotIn('secret-response', str(caught.exception))
 
+    def test_anthropic_uses_structured_output_schema(self):
+        real_client = httpx.AsyncClient
+        schema = {'type': 'object', 'properties': {'answers': {'type': 'array', 'items': {'type': 'string'}}},
+                  'required': ['answers'], 'additionalProperties': False}
+
+        def respond(request):
+            self.assertEqual(request.url.host, 'api.anthropic.com')
+            payload = json.loads(request.content)
+            self.assertEqual(payload['output_config']['format'], {'type': 'json_schema', 'schema': schema})
+            return httpx.Response(200, json={'stop_reason': 'end_turn', 'usage': {'input_tokens': 10, 'output_tokens': 5},
+                'content': [{'type': 'text', 'text': '{"answers":["ready"]}'}]})
+
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}), \
+                patch.object(providers.httpx, 'AsyncClient', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(respond), **kw)):
+            result = asyncio.run(providers.ask('question batch', 'Answer', provider='anthropic', model='claude-sonnet-4-6', schema=schema, with_usage=True))
+        self.assertEqual(result['answers'], ['ready'])
+        self.assertEqual(result['_total_tokens'], 15)
+
     def test_live_workers_route_without_ground_truth(self):
         async def check():
             state = exchange.initial_state()
