@@ -137,6 +137,28 @@ class SessionCheck(unittest.TestCase):
         finally:
             providers.clear_agent_configuration()
 
+    def test_labeled_agents_call_providers_with_connection_fields_only(self):
+        # autospec keeps ask's real signature, so an extra field such as the display label fails like it does live.
+        async def answer(*args, **kwargs):
+            return {'answers': [str(i) for i in range(10)], '_total_tokens': 100}
+        try:
+            config = providers.configure_agents([
+                {'provider': 'openai', 'model': 'gpt-test', 'label': 'Integral Ace', 'api_key': 'secret-one'},
+                {'provider': 'anthropic', 'model': 'claude-test', 'label': 'Math Scout', 'api_key': 'secret-two'},
+            ])
+            state = exchange.initial_state()
+            state.update(round=1, mode='live', configuration=config, workers=exchange.worker_rows(2, ['Integral Ace', 'Math Scout']),
+                         dataset=dict(name='quiz', scoring='exact', count=10, instructions='', digest='d',
+                                      problems=[dict(question=f'Question {i}', answer=str(i)) for i in range(10)]))
+            with patch.object(exchange, 'ask', autospec=True, side_effect=answer) as ask:
+                asyncio.run(exchange.benchmark(state))
+            self.assertEqual(ask.call_count, 2)
+            self.assertTrue(all('label' not in call.kwargs for call in ask.call_args_list))
+            self.assertEqual([call.kwargs['provider'] for call in ask.call_args_list], ['openai', 'anthropic'])
+            self.assertTrue(all(w['score'] == 100 for w in state['workers']))
+        finally:
+            providers.clear_agent_configuration()
+
     def test_scoring_parser(self):
         self.assertEqual(exchange.number('reasoning\n#### 1,200'), 1200)
         self.assertEqual(exchange.number('$10.50'), 10.5)
