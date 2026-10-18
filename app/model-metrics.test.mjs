@@ -74,3 +74,13 @@ test('cumulative series keeps running accuracy per batch', () => {
   assert.equal(letterGrade(85), 'B');
   assert.equal(letterGrade(null), '—');
 });
+
+test('task metric averages weight measured examples, preserve zero, and omit missing values', () => {
+  const scores = [
+    { diagnostics: { task_metric_count: 10, task_metric_mean: 0 } },
+    { diagnostics: { task_metric_count: 5, task_metric_mean: 6 } },
+    { diagnostics: { task_metric_count: 0, task_metric_mean: null } },
+  ];
+  assert.equal(withAspects([{ scores }])[0].taskMetric, 2);
+  assert.equal(withAspects([{ scores: [] }])[0].taskMetric, null);
+});

@@ -367,7 +367,7 @@ async def start_round(request: StartRequest):
             raise HTTPException(400, 'Choose one to three available demo agents')
         session['configuration'] = None
         session['workers'] = [worker for worker in available if worker['id'] in selected_ids]
-    if plan and plan['method'] != 'items':
+    if plan and (plan['method'] != 'items' or plan.get('task_metric')):
         judge = evaluation.evaluator()
         if judge['provider'] == 'ollama':
             try:
