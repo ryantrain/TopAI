@@ -8,7 +8,7 @@ import secrets
 import httpx
 
 KEYS = {'openai': 'OPENAI_API_KEY', 'gemini': 'GEMINI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'ollama': None}
-DEFAULT_MODELS = {'openai': 'gpt-6-luna', 'gemini': 'gemini-2.5-flash-lite', 'anthropic': 'claude-haiku-5-5', 'ollama': 'qwen2.5:7b'}
+DEFAULT_MODELS = {'openai': 'gpt-4o-mini', 'gemini': 'gemini-2.5-flash-lite', 'anthropic': 'claude-sonnet-4-6', 'ollama': 'qwen2.5:7b'}
 _runtime_configuration = None
 _runtime_keys = {}
 
