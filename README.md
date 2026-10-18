@@ -7,13 +7,13 @@ The benchmark engine is general enough for numeric answers, exact labels, struct
 ## Execution flow
 
 ```text
+User chooses 1–6 real agents or explicitly selects the 3-agent demo
+   ↓
 User describes the task and uploads worksheets
    ↓
 Local Ollama drafts editable benchmark criteria
    ↓
-App checks WORKER_PROVIDERS and their API keys
-   ├─ ready: run 1–6 configured API/local agents concurrently
-   └─ incomplete: run 3 seeded simulated demo agents
+Run the selected API/local agents concurrently, or run the demo agents
    ↓
 Gemini evaluates each completed answer batch when GEMINI_API_KEY is set
    └─ missing or failed Gemini request: OpenAI evaluates when OPENAI_API_KEY is set
@@ -35,7 +35,7 @@ Requirements:
 - Node.js 20.9+
 - Python 3.11+
 - [Ollama](https://ollama.com/) for benchmark planning and the final evaluation fallback
-- Provider API keys for real agents; without a complete agent configuration the app uses the demo fallback
+- Provider API keys for real agents, or use the explicit demo option
 
 On macOS or Linux:
 
@@ -60,7 +60,9 @@ Open <http://127.0.0.1:3000>. Run `ollama serve` separately if the Ollama deskto
 
 ## Configure agents and evaluation
 
-Copy `.env.example` to `.env`. `WORKER_PROVIDERS` accepts one to six comma-separated values from `openai`, `gemini`, `anthropic`, and `ollama`. `WORKER_MODELS` and `WORKER_COST_PER_1K_TOKENS` follow the same order.
+The setup screen accepts one to six agents. For each agent, choose OpenAI, Gemini, Anthropic, or local Ollama and enter its exact model name. Cloud API keys entered there stay only in backend process memory and are never returned to the browser or written to the database. Restarting FastAPI clears them.
+
+You can keep credentials in `.env` instead. Copy `.env.example` to `.env`; `WORKER_PROVIDERS` accepts one to six comma-separated providers, while `WORKER_MODELS` and `WORKER_COST_PER_1K_TOKENS` follow the same order.
 
 ```dotenv
 GEMINI_API_KEY=your_key
@@ -78,7 +80,7 @@ WORKER_COST_PER_1K_TOKENS=,,
 OLLAMA_MODEL=qwen2.5:7b
 ```
 
-At setup, the UI reports either **API agents ready** or **Demo fallback ready**. All keys required by the configured workers must be present for an API run. If configuration is invalid or a key is missing, the UI selects the seeded demo automatically.
+At setup, choose **Use real agents** after entering the configuration, or **Skip and use 3 demo agents**. The app never silently changes a requested real-agent run into a demo.
 
 Evaluation follows a separate priority:
 
@@ -90,12 +92,12 @@ Ollama always drafts benchmark plans. Structured CSV/JSON imports need no conver
 
 ## Use the integral benchmark
 
-1. Add or select worksheets totaling at least 10 questions.
-2. Describe the task, such as `Find the best agent for first-year indefinite integrals.`
-3. Press send. The app requires local Ollama to build benchmark metrics from the request before any quiz can start.
-4. Review the generated method, instructions, rubric, and number of quizzes.
-5. Press send again to start the class. The app selects API agents or the demo fallback automatically.
-6. Inspect the recommendation, result table, chart, and marked answers.
+1. Configure one to six real agents, or select the three-agent demo.
+2. Add or select worksheets totaling at least 10 questions.
+3. Describe the task, such as `Find the best agent for first-year indefinite integrals.`
+4. Press send. The app requires local Ollama to build benchmark metrics from the request before any quiz can start.
+5. Review the generated method, instructions, rubric, and number of quizzes.
+6. Press send again to start the class, then inspect the recommendation, result table, chart, and marked answers.
 
 A structured dataset can be a CSV, JSON array, JSONL file, or JSON envelope:
 

@@ -11,6 +11,7 @@ scratch = tempfile.TemporaryDirectory()
 os.environ['EVALUATION_DB'] = str(Path(scratch.name) / 'test.sqlite3')
 os.environ['DATABASE_URL'] = ''
 from backend import main as exchange
+from backend import providers
 from fastapi.testclient import TestClient
 
 
@@ -108,6 +109,32 @@ class SessionCheck(unittest.TestCase):
             self.assertEqual(client.get('/api/market').status_code, 404)
             self.assertEqual(client.post('/api/rounds', json={'mode': 'invalid'}).status_code, 422)
             self.assertEqual(client.post('/api/rounds', json={'rounds': 11}).status_code, 422)
+
+    def test_browser_agent_setup_is_public_but_credentials_are_not(self):
+        exchange.session.clear()
+        exchange.session.update(exchange.initial_state())
+        secret = 'secret-never-returned'
+        try:
+            with TestClient(exchange.app) as client:
+                response = client.post('/api/agents', json={'agents': [
+                    {'provider': 'openai', 'model': 'gpt-test', 'api_key': secret},
+                    {'provider': 'gemini', 'model': 'gemini-test', 'api_key': 'gemini-secret'},
+                ]})
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(len(payload['configuration']['workers']), 2)
+                self.assertNotIn(secret, response.text)
+                self.assertNotIn('gemini-secret', response.text)
+                self.assertNotIn('credential_id', response.text)
+                current = client.get('/api/session')
+                self.assertEqual(current.status_code, 200)
+                self.assertEqual(len(current.json()['workers']), 2)
+                self.assertEqual(len(current.json()['demo_workers']), 3)
+                self.assertEqual(current.json()['integrations']['agent_source'], 'browser')
+                self.assertNotIn(secret, current.text)
+                self.assertNotIn('credential_id', current.text)
+        finally:
+            providers.clear_agent_configuration()
 
     def test_scoring_parser(self):
         self.assertEqual(exchange.number('reasoning\n#### 1,200'), 1200)

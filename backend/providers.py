@@ -3,11 +3,14 @@ import json
 import math
 import os
 import re
+import secrets
 
 import httpx
 
 KEYS = {'openai': 'OPENAI_API_KEY', 'gemini': 'GEMINI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'ollama': None}
 DEFAULT_MODELS = {'openai': 'gpt-4.1-mini', 'gemini': 'gemini-3.8-flash', 'anthropic': 'claude-sonnet-4-6', 'ollama': 'qwen2.5:7b'}
+_runtime_configuration = None
+_runtime_keys = {}
 
 
 def model_for(provider):
@@ -15,6 +18,9 @@ def model_for(provider):
 
 
 def configuration():
+    if _runtime_configuration is not None:
+        return dict(cost_per_1k_tokens=list(_runtime_configuration['cost_per_1k_tokens']),
+                    workers=[dict(worker) for worker in _runtime_configuration['workers']])
     workers = [p.strip().lower() for p in os.getenv('WORKER_PROVIDERS', 'openai,gemini,openai').split(',')]
     models = [m.strip() for m in os.getenv('WORKER_MODELS', '').split(',')]
     raw_rates = os.getenv('WORKER_COST_PER_1K_TOKENS', '')
@@ -31,9 +37,66 @@ def configuration():
                 )
 
 
+def configure_agents(slots):
+    """Install UI-supplied worker credentials in process memory only."""
+    global _runtime_configuration, _runtime_keys
+    if not 1 <= len(slots) <= 6:
+        raise ValueError('Configure one to six agents')
+    previous_workers = _runtime_configuration['workers'] if _runtime_configuration else []
+    previous_keys = _runtime_keys
+    keys = {}
+    workers = []
+    for index, slot in enumerate(slots, 1):
+        provider = str(slot.get('provider', '')).strip().lower()
+        model = str(slot.get('model', '')).strip()
+        key = str(slot.get('api_key', '')).strip()
+        if provider not in KEYS:
+            raise ValueError(f'Agent {index}: choose openai, gemini, anthropic, or ollama')
+        if not model or len(model) > 200:
+            raise ValueError(f'Agent {index}: enter a model name')
+        worker = dict(provider=provider, model=model)
+        if provider != 'ollama':
+            if key:
+                credential_id = secrets.token_urlsafe(18)
+                keys[credential_id] = key
+                worker['credential_id'] = credential_id
+            elif not os.getenv(KEYS[provider], '').strip():
+                previous = previous_workers[index - 1] if index <= len(previous_workers) else {}
+                credential_id = previous.get('credential_id') if previous.get('provider') == provider else None
+                if not credential_id or credential_id not in previous_keys:
+                    raise ValueError(f'Agent {index}: enter an API key for {provider}')
+                keys[credential_id] = previous_keys[credential_id]
+                worker['credential_id'] = credential_id
+        workers.append(worker)
+    _runtime_keys = keys
+    _runtime_configuration = dict(cost_per_1k_tokens=[None] * len(workers), workers=workers)
+    return configuration()
+
+
+def clear_agent_configuration():
+    global _runtime_configuration, _runtime_keys
+    _runtime_configuration = None
+    _runtime_keys = {}
+
+
+def public_configuration(config):
+    return dict(cost_per_1k_tokens=list(config['cost_per_1k_tokens']),
+                workers=[{key: value for key, value in worker.items() if key != 'credential_id'}
+                         for worker in config['workers']])
+
+
+def runtime_configuration_active():
+    return _runtime_configuration is not None
+
+
 def readiness(config):
-    providers = {s['provider'] for s in config['workers']}
-    return [KEYS[p] for p in sorted(providers) if KEYS[p] and not os.getenv(KEYS[p])]
+    missing = []
+    for index, slot in enumerate(config['workers'], 1):
+        provider = slot['provider']
+        credential = slot.get('credential_id')
+        if KEYS[provider] and not (_runtime_keys.get(credential) or os.getenv(KEYS[provider], '').strip()):
+            missing.append(f'agent {index} {KEYS[provider]}')
+    return missing
 
 
 def parse_object(raw):
@@ -50,14 +113,14 @@ def parse_object(raw):
 
 
 async def ask(prompt, instruction, model=None, provider='openai', with_usage=False, schema=None,
-              attachment=None, max_tokens=8192, timeout=90):
+              attachment=None, max_tokens=8192, timeout=90, credential_id=None):
     if provider not in KEYS:
         raise ValueError('Unsupported model provider')
     if attachment and provider != 'gemini':
         raise ValueError('File attachments are only supported for Gemini')
     if provider == 'ollama':
         return await ask_local(prompt, instruction, model or model_for(provider), with_usage, schema)
-    key = os.getenv(KEYS[provider])
+    key = _runtime_keys.get(credential_id) or os.getenv(KEYS[provider])
     if not key:
         raise ValueError(f'Missing {KEYS[provider]}')
     model = model or model_for(provider)
