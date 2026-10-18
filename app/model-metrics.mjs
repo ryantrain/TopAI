@@ -41,8 +41,11 @@ export function withAspects(rows) {
     const samples = w.scores || [];
     const sum = key => samples.reduce((n, s) => n + (s[key] || 0), 0);
     const priced = samples.length > 0 && samples.every(s => Number.isFinite(s.estimated_cost_usd));
+    const measured = samples.filter(s => s.diagnostics?.task_metric_count > 0 && Number.isFinite(s.diagnostics.task_metric_mean));
+    const metricCount = measured.reduce((n, s) => n + s.diagnostics.task_metric_count, 0);
+    const taskMetric = metricCount ? measured.reduce((n, s) => n + s.diagnostics.task_metric_mean * (s.diagnostics.task_metric_count / metricCount), 0) : null;
     // Accuracy counts every graded batch, even ones without token usage.
-    return { ...w, gradedCorrect: sum('correct'), gradedAttempted: sum('attempted'),
+    return { ...w, taskMetric, gradedCorrect: sum('correct'), gradedAttempted: sum('attempted'),
       accuracy: sum('attempted') ? 100 * sum('correct') / sum('attempted') : null,
       cost: priced ? sum('estimated_cost_usd') : null };
   });

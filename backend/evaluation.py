@@ -15,9 +15,18 @@ class JudgeChainError(RuntimeError):
     """All configured judges failed, with provider-safe diagnostics."""
 
 
+class TaskMetric(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(min_length=1, max_length=80, pattern=r"\S")
+    unit: str = Field(min_length=1, max_length=40, pattern=r"\S")
+    instruction: str = Field(min_length=1, max_length=2000, pattern=r"\S")
+
+
 class BenchmarkProtocol(BaseModel):
     model_config = {"extra": "forbid"}
 
+    task_metric: TaskMetric | None = None
     procedure: str = Field(default="Test supplied examples against their references.", max_length=8000)
     selection: Literal["sequential", "shuffled"] = "sequential"
     repetitions: int = Field(default=1, ge=1, le=5, strict=True)
@@ -54,7 +63,7 @@ class BenchmarkPlan(BenchmarkProtocol):
         self.output_unit = self.output_unit.strip()
         if not self.output_unit:
             raise ValueError('Name the output items to count, such as ideas.')
-        self.execution_spec = json.dumps({key: getattr(self, key) for key in BenchmarkProtocol.model_fields}, indent=2)
+        self.execution_spec = json.dumps(self.model_dump(include=set(BenchmarkProtocol.model_fields)), indent=2)
         if len(self.execution_spec) > 40000:
             raise ValueError('Execution plan exceeds 40,000 characters.')
         return self
@@ -168,6 +177,10 @@ async def suggest(goal, dataset=None):
         'repetitions (integer 1-5, separate calls on the same ten questions), method, tolerance, pass_score, instructions and rubric. '
         'It runs ten fresh examples per quiz. It reports pass rate, worker tokens/time, '
         'exact repeat agreement when repetitions > 1, and mean absolute error and signed bias for numeric scoring. '
+        'Also choose task_metric when one useful task-specific numeric measurement can be extracted from each response. '
+        'Return {name, unit, instruction} defining exactly what to measure per example, or null when unnecessary or not measurable. '
+        'For example, average apples counted per picture measures the apple count reported in each response, not its accuracy. '
+        'Do not duplicate standard metrics or invent unavailable image data or measurements. '
         'Write procedure as a detailed explanation of these actual steps and why they address the need. '
         'Do not claim prose executes new algorithms. List requirements these controls cannot measure in unsupported_requirements '
         '(array of strings); use an empty array only when the requested evaluation is supported. '
@@ -200,6 +213,7 @@ async def suggest(goal, dataset=None):
 
 async def grade(problems, answers, plan):
     method = plan['method']
+    results = None
     if method == 'items':
         results = []
         for answer in answers:
@@ -211,7 +225,8 @@ async def grade(problems, answers, plan):
                 count = 0
             results.append(dict(correct=count > 0, output_count=count,
                 evaluation_reason=f'{count} distinct items; counts text, not relevance or originality.'))
-        return results
+        if not plan.get('task_metric'):
+            return results
     items = [dict(id=i, question=p['question'], reference=p['answer'], response=a)
              for i, (p, a) in enumerate(zip(problems, answers))]
     criteria = dict(goal=plan['goal'], task_instructions=plan.get('instructions', ''),
@@ -231,6 +246,11 @@ async def grade(problems, answers, plan):
         'Return {"grades": [{"id": 0, "correct": true, "score": 0, "reason": "brief evidence-based explanation"}, ...]} '
         'with one entry per item, in order. score is 0-100 for how fully the response meets the criteria.\n'
         + json.dumps(criteria))
+    if plan.get('task_metric'):
+        instruction += ('\nAdditionally return task_metric_value in every grade: a finite number extracted '
+            'from the response using this metric definition, or null if unmeasurable. Never substitute '
+            'the reference value for a missing response measurement. Metric definition: '
+            + json.dumps(plan['task_metric']))
     failures = []
     for judge in evaluator_chain():
         try:
@@ -257,6 +277,15 @@ async def grade(problems, answers, plan):
         checked.append(dict(correct=correct and score >= plan['pass_score'],
                             evaluation_score=score, evaluation_reason=reason[:1000],
                             evaluator_provider=judge['provider'], evaluator_model=judge['model']))
+    if plan.get('task_metric'):
+        for verdict, raw in zip(checked, grades):
+            value = raw.get('task_metric_value')
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
+                raise ValueError('The evaluator returned an invalid task metric')
+            verdict['task_metric_value'] = value
+    if results is not None:
+        for verdict, counted in zip(checked, results):
+            verdict.update(counted)
     return checked
 
 
@@ -287,4 +316,9 @@ def diagnostics(answers, plan):
         metrics['numeric_valid_count'] = len(errors)
         metrics['mean_absolute_error'] = sum(abs(e) / len(errors) for e in errors) if errors else None
         metrics['grading_bias'] = sum(e / len(errors) for e in errors) if errors else None
+    if plan and plan.get('task_metric'):
+        values = [a.get('task_metric_value') for a in answers]
+        values = [v for v in values if type(v) in (int, float) and math.isfinite(v)]
+        metrics['task_metric_count'] = len(values)
+        metrics['task_metric_mean'] = sum(v / len(values) for v in values) if values else None
     return metrics

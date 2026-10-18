@@ -161,7 +161,7 @@ export default function ClassroomPage() {
               <summary>Chart<ChevronDown size={16} aria-hidden="true"/></summary>
               <ProgressChart agents={inClass} countItems={countItems} height={240}/>
             </details>
-            <ReportCard rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>
+            <ReportCard taskMetric={session?.dataset?.benchmark_plan?.task_metric} rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>
           </div>}
         </div>}
       </main>

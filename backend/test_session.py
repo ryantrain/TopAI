@@ -16,6 +16,25 @@ from fastapi.testclient import TestClient
 
 
 class SessionCheck(unittest.TestCase):
+    def test_live_quiz_keeps_display_label_out_of_provider_arguments(self):
+        state = exchange.initial_state()
+        state.update(mode='live', round=1)
+        state['dataset'] = dict(scoring='numeric', problems=exchange.demo_problems(101))
+        state['workers'] = exchange.worker_rows(1, ['Ada'])
+        state['configuration'] = dict(cost_per_1k_tokens=[None], workers=[dict(
+            provider='openai', model='test-model', label='Ada', credential_id='test-credential')])
+        calls = []
+
+        async def ask(prompt, instruction, *, provider, model, credential_id, with_usage):
+            calls.append((provider, model, credential_id, with_usage))
+            return dict(answers=[0] * 10, _total_tokens=100)
+
+        with patch.object(exchange, 'ask', ask):
+            asyncio.run(exchange.benchmark(state))
+        self.assertEqual(calls, [('openai', 'test-model', 'test-credential', True)])
+        self.assertEqual(state['workers'][0]['label'], 'Ada')
+        self.assertEqual(len(state['workers'][0]['answers']), 10)
+
     def test_complete_quiz_and_persistence(self):
         state = exchange.initial_state()
         state['round'] = 1
