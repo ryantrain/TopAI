@@ -16,7 +16,7 @@ export default function BenchmarkPicker({ market, disabled, refresh, onError }) 
   const count = market?.selection_count || 0;
   const summary = selection.length > 1 ? `${selection.length} datasets · ${count} q`
     : selection.length ? `${files.find(f => f.id === selection[0])?.name || 'Dataset'} · ${count} q`
-    : 'Sample questions';
+    : 'Choose a dataset';
 
   useEffect(() => {
     if (!open) return;
@@ -44,7 +44,7 @@ export default function BenchmarkPicker({ market, disabled, refresh, onError }) 
       <div className="picker-head"><strong>Datasets</strong><span>Pick one or more</span></div>
       {locked && <p className="picker-note">Datasets are fixed for this class. Start a new class to change them.</p>}
       <label className="picker-option"><input type="checkbox" checked={!selection.length} disabled={locked || pending} onChange={() => choose([])}/>
-        <span><strong>Sample questions</strong><small>Built in · Practice uses generated math</small></span></label>
+        <span><strong>No dataset</strong><small>Select or upload at least 20 questions to run</small></span></label>
       {files.map(f => <div className="picker-option" key={f.id}>
         <label><input type="checkbox" checked={selection.includes(f.id)} disabled={locked || pending} onChange={() => toggle(f.id)}/>
           <span><strong>{f.name}</strong><small>{f.count} questions · {f.scoring === 'numeric' ? 'numeric' : 'text'} answers{f.model_answers ? ` · ${f.model_answers} answers worked out automatically, check them` : ''}</small></span></label>

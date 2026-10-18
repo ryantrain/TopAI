@@ -11,7 +11,7 @@ export const METHODS = {
   exact: 'Exact match',
   numeric: 'Number within tolerance',
   json: 'Structured JSON',
-  rubric: 'Rubric judge',
+  rubric: 'Ollama rubric judge',
   items: 'Count distinct items',
 };
 const BLANK_PLAN = { goal: '', method: 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: 0.000001, pass_score: 80, repetitions: 1 };
@@ -24,13 +24,12 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   const [drafting, setDrafting] = useState(false);
   const [drafted, setDrafted] = useState(false);
   const [uploading, setUploading] = useState('');
-  const [mode, setMode] = useState('demo');
   const [rounds, setRounds] = useState(1);
   const fileInput = useRef(null);
   const textarea = useRef(null);
   // Selected worksheets with fewer than 20 questions leave no dataset, which blocks runs.
   const selectedCount = market?.selection?.length ? market.selection_count || 0 : null;
-  const maxRounds = dataset ? Math.floor(dataset.count / 20) : selectedCount !== null ? 0 : 10;
+  const maxRounds = dataset ? Math.floor(dataset.count / 20) : 0;
   const locked = step === 1;
 
   const savedPlan = JSON.stringify(dataset?.benchmark_plan || null);
@@ -75,24 +74,22 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   }
 
 
-  const liveBlocked = mode === 'live' && (!market?.live_available || !dataset);
   const tooSmall = (dataset || selectedCount !== null) && maxRounds < 1;
   const canSend = step === 2 ? !!plan.goal.trim() && !busy
-    : step === 0 && !!market && !busy && !uploading && !drafting && !liveBlocked && !tooSmall;
+    : step === 0 && !!plan.goal.trim() && !!market && !busy && !uploading && !drafting && !tooSmall;
 
   function send() {
     if (!canSend) return;
     if (step === 2) { onNewTask(); return; }
-    onStart({ mode, rounds, plan: dataset && plan.goal.trim() ? plan : null });
+    onStart({ rounds, plan: dataset ? plan : null });
   }
 
   const note = step === 1 ? 'Agents are working. The task is locked until this class ends.'
     : step === 2 ? 'Send a new task to start a fresh class.'
     : uploading ? uploading
     : tooSmall ? `Selected worksheets have ${dataset?.count ?? selectedCount} questions; a quiz needs 20. Add or tick more worksheets.`
-    : mode === 'live' && !dataset ? 'Attach a worksheet to run real models.'
-    : !dataset ? 'No worksheet yet: Practice uses sample math questions. Add worksheets with +.'
-    : mode === 'demo' ? 'Practice results are simulated.' : 'Questions are sent to the configured AI providers.';
+    : !dataset ? 'Add or select a worksheet with at least 20 questions before starting.'
+    : 'The three demo agents produce simulated answers. Local Ollama judges them against your answer key.';
 
   return <div className="composer-wrap">
     {details && step === 0 && <div className="composer-details">
@@ -112,7 +109,7 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
       {uploading && <span className="chip"><Loader2 size={13} className="spin"/>Reading…</span>}
       <label className="chip">Marking<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
       {plan.method === 'numeric' && <label className="chip">±<input className="tolerance" type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))} aria-label="Allowed error"/></label>}
-      <label className="chip">Run<select value={mode} onChange={e => setMode(e.target.value)}><option value="demo">Practice</option><option value="live" disabled={!market?.live_available}>Real models{market?.live_available ? '' : ' (no keys)'}</option></select></label>
+      <span className="chip" title="The current prototype uses simulated agents and a local Ollama judge">Simulated agents · Ollama judge</span>
       <label className="chip" title="Ask each agent every question this many times to check consistency">Repeats<select value={plan.repetitions ?? 1} onChange={e => change('repetitions', Number(e.target.value))}>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}×</option>)}</select></label>
       <label className="chip">Quizzes<select value={rounds} onChange={e => setRounds(Number(e.target.value))}>{Array.from({ length: Math.max(1, Math.min(10, maxRounds)) }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
       <button type="button" className="chip action" onClick={() => setDetails(v => !v)} aria-expanded={details}><SlidersHorizontal size={13}/>Details</button>

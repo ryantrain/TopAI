@@ -6,13 +6,13 @@ import { AgentImage } from './agents';
 
 const show = (v, f) => v === null || v === undefined ? '—' : f(v);
 
-export function Recommendation({ pick, minimum, setMinimum, demo }) {
+export function Recommendation({ pick, minimum, setMinimum }) {
   if (!pick) return null;
   const w = pick.worker;
   return <section className="verdict" style={{ '--agent': w.color }}>
     <AgentImage agent={w} working/>
     <div>
-      <small>{demo ? 'Practice result · simulated' : 'Recommendation'}</small>
+      <small>Ollama-judged demo result</small>
       <h2>{pick.qualified ? `Use ${w.name}` : `Nobody reached ${minimum}%. ${w.name} came closest.`}</h2>
       <p>{w.name} ({w.provider === 'simulated' ? 'simulated' : w.model || 'agent'}) answered {w.gradedCorrect} of {w.gradedAttempted} correctly ({w.accuracy.toFixed(0)}%)
         {w.speed !== null ? `, about ${w.speed.toFixed(1)} s per question` : ''}
@@ -29,7 +29,7 @@ export default function ReportCard({ rows, winner, onSelect, countItems }) {
     <div className="table-wrap"><table>
       <thead><tr><th>Agent</th><th>Grade</th><th className="num">Overall</th><th className="num">Accuracy</th><th className="num">{countItems ? 'Items / 1k tok' : 'Correct / 1k tok'}</th><th className="num">Time / q</th><th className="num">Est. cost</th></tr></thead>
       <tbody>{rows.map(w => <tr key={w.id} className={winner === w.id ? 'top' : ''}>
-        <td><button type="button" className="agent-cell" onClick={() => onSelect(w.id)}><i style={{ background: w.color }}/><span><strong>{w.name}</strong><small>{w.provider && w.provider !== 'simulated' ? w.model : 'simulated'}</small></span></button></td>
+        <td><button type="button" className="agent-cell" onClick={() => onSelect(w.id)}><i style={{ background: w.color }}/><span><strong>{w.name}</strong><small>simulated demo agent</small></span></button></td>
         <td><span className="grade">{letterGrade(w.accuracy)}</span></td>
         <td className="num">{show(w.overall, v => v.toFixed(0))}</td>
         <td className="num">{w.gradedAttempted ? `${w.accuracy.toFixed(0)}%` : '—'}<small> {w.gradedAttempted ? `${w.gradedCorrect}/${w.gradedAttempted}` : ''}</small></td>

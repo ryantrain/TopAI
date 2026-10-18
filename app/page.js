@@ -58,7 +58,7 @@ export default function ClassroomPage() {
     setActive(previous => { const next = { ...previous, [key]: !previous[key] }; store('activeAgents', localStorage, next); return next; });
   }
 
-  async function start({ mode, rounds, plan }) {
+  async function start({ rounds, plan }) {
     setBusy(true); setError('');
     try {
       if (plan) {
@@ -66,7 +66,7 @@ export default function ClassroomPage() {
         const { judge_model, saved_at, execution_spec, ...body } = plan;
         await readApiResponse(await fetch('/api/benchmark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
       }
-      await readApiResponse(await fetch('/api/rounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, rounds }) }));
+      await readApiResponse(await fetch('/api/rounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'demo', rounds }) }));
       const next = { startRound: market?.round || 0, rounds };
       setRun(next); store('classRun', sessionStorage, next);
       await refresh();
@@ -95,8 +95,7 @@ export default function ClassroomPage() {
 
   const rows = withAspects(modelMetrics(inClass, null, countItems));
   const pick = recommend(rows, minimum);
-  const configured = market?.integrations?.configuration?.workers?.map(w => `${w.provider} · ${w.model}`) || [];
-  const models = step > 0 && market?.mode === 'demo' ? agents.map(() => 'Simulated') : configured;
+  const models = agents.map(() => 'Simulated demo agent');
   const remaining = market?.dataset ? Math.floor(market.dataset.count / 20) - (market?.round || 0) : 10 - (market?.round || 0);
 
   const phase = market?.phase;
@@ -113,8 +112,9 @@ export default function ClassroomPage() {
   return <div className="shell">
     <Sidebar>
       <dl className="session">
-        <div><dt>Worksheet</dt><dd>{market?.dataset ? `${market.dataset.name} · ${market.dataset.count} q` : 'Sample questions'}</dd></div>
-        <div><dt>Run</dt><dd>{step === 0 ? '—' : market?.mode === 'live' ? 'Real models' : 'Practice (simulated)'}</dd></div>
+        <div><dt>Worksheet</dt><dd>{market?.dataset ? `${market.dataset.name} · ${market.dataset.count} q` : 'None selected'}</dd></div>
+        <div><dt>Run</dt><dd>{step === 0 ? '—' : 'Simulated agents'}</dd></div>
+        <div><dt>Judge</dt><dd>Local Ollama</dd></div>
         <div><dt>Quizzes done</dt><dd>{market?.round || 0}</dd></div>
       </dl>
       <button type="button" className="sidebar-button" onClick={newClass} disabled={!market || market.running || busy}><RotateCcw size={14}/>New class</button>
@@ -128,10 +128,10 @@ export default function ClassroomPage() {
             <h1>{step === 0 ? 'Choose your agents and set the task' : step === 1 ? `Quiz ${quiz} of ${total} · ${phaseTitle}` : 'How the agents did'}</h1>
             <p>{step === 0 ? 'Switch on the agents you want to compare, describe the task below, and add a worksheet with questions and answers.'
               : step === 1 ? `${phaseDetail}. Every agent gets the same questions without the answer key.`
-              : goal || (market?.mode === 'demo' ? 'Practice run on sample questions.' : 'Run on the default questions.')}</p>
+              : goal || 'Simulated answers judged against your worksheet by local Ollama.'}</p>
             {step === 1 && <div className="progress" role="progressbar" aria-label="Class progress" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress * 100}%` }}/></div>}
           </div>
-          {step === 2 && <button type="button" className="quiet-button" disabled={busy || remaining < 1} onClick={() => start({ mode: market.mode, rounds: 1, plan: null })} title={remaining < 1 ? 'No unused questions left' : undefined}><Play size={14}/>One more quiz</button>}
+          {step === 2 && <button type="button" className="quiet-button" disabled={busy || remaining < 1} onClick={() => start({ rounds: 1, plan: null })} title={remaining < 1 ? 'No unused questions left' : undefined}><Play size={14}/>One more quiz</button>}
         </header>
 
         {(error || market?.error) && <div className="notice" role="alert">{error || market.error}</div>}
@@ -140,7 +140,7 @@ export default function ClassroomPage() {
           <div className="stage-left">
             <AgentsPanel agents={classroom} models={models} state={state} statuses={statuses} scores={scores} top={step === 2 ? pick?.worker.id : null}
               onToggle={step === 0 ? toggle : null} onOpen={step > 0 ? setSelected : null} compact={step > 0}/>
-            {step === 2 && <Recommendation pick={pick} minimum={minimum} setMinimum={setMinimum} demo={market?.mode === 'demo'}/>}
+            {step === 2 && <Recommendation pick={pick} minimum={minimum} setMinimum={setMinimum}/>}
           </div>
           {step === 1 && <div className="stage-right"><ProgressChart agents={inClass} countItems={countItems} live/></div>}
           {step === 2 && <div className="stage-right">

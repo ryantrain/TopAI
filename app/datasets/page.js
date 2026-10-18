@@ -69,7 +69,7 @@ export default function DatasetsPage() {
     <Sidebar>
       <dl className="session">
         <div><dt>Datasets saved</dt><dd>{files.length}</dd></div>
-        <div><dt>Used in next class</dt><dd>{selection.length ? `${selection.length} · ${count} questions` : 'Sample questions'}</dd></div>
+        <div><dt>Used in next class</dt><dd>{selection.length ? `${selection.length} · ${count} questions` : 'None selected'}</dd></div>
       </dl>
     </Sidebar>
     <div className="workspace">
@@ -106,7 +106,7 @@ export default function DatasetsPage() {
         <section className="dataset-list" aria-labelledby="saved-title">
           <div className="section-row">
             <div><h2 id="saved-title">Your datasets</h2>
-              <p>{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'quiz' : 'quizzes'} available${count < 20 ? ` · add ${20 - count} more questions to run` : ''}` : 'None selected: the classroom uses built-in sample questions.'}</p></div>
+              <p>{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'quiz' : 'quizzes'} available${count < 20 ? ` · add ${20 - count} more questions to run` : ''}` : 'None selected: choose or upload at least 20 questions before starting.'}</p></div>
             {selection.length > 0 && !locked && <button type="button" className="link-button" onClick={() => act('all', () => selectWorksheets([]))}>Clear selection</button>}
           </div>
           {locked && <p className="muted">A class is in progress or has results, so the selection is fixed. Start a new class in the classroom to change it. You can still upload and preview.</p>}

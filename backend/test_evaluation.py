@@ -57,7 +57,7 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual(grades[0]['evaluation_score'], 95)
         self.assertEqual(grades[1]['evaluation_reason'], 'Contradicts the reference')
         # The verdict is the evaluator's, so no local rule may override it.
-        self.assertEqual(mock.call_args.kwargs, dict(provider='gemini', model=providers.model_for('gemini')))
+        self.assertEqual(mock.call_args.kwargs, dict(provider='ollama', model=providers.model_for('ollama')))
         criteria = mock.call_args.args[1]
         self.assertIn('Return the mark', criteria)
         self.assertIn('Reject invented marks', criteria)
@@ -95,7 +95,7 @@ class EvaluationCheck(unittest.TestCase):
             self.assertEqual(client.put('/api/benchmark', json={**body, 'method': 'json'}).status_code, 400)
             saved = client.put('/api/benchmark', json={**body, 'method': 'rubric'})
             self.assertEqual(saved.status_code, 200)
-            self.assertEqual(saved.json()['evaluator'], dict(provider='gemini', model=providers.model_for('gemini')))
+            self.assertEqual(saved.json()['evaluator'], dict(provider='ollama', model=providers.model_for('ollama')))
             exchange.market['round'] = 1
             self.assertEqual(client.put('/api/benchmark', json=body).status_code, 409)
             exchange.market['round'] = 0
@@ -149,16 +149,19 @@ class EvaluationCheck(unittest.TestCase):
         state = exchange.market
         state.update(round=1, mode='live')
         mock = AsyncMock(return_value=dict(answers=[9] * 10, _total_tokens=100))
-        gemini = AsyncMock(return_value=dict(grades=[dict(id=i, correct=True, score=99, reason='Within tolerance') for i in range(10)]))
-        with patch.object(exchange, 'ask', mock), patch.object(providers, 'ask', gemini):
+        judge = AsyncMock(return_value=dict(grades=[dict(id=i, correct=True, score=99, reason='Within tolerance') for i in range(10)]))
+        with patch.object(exchange, 'ask', mock), patch.object(providers, 'ask', judge):
             asyncio.run(exchange.benchmark(state))
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
         self.assertNotIn(plan['goal'], mock.call_args.args[1])
         self.assertNotIn('answer', mock.call_args.args[0])
-        # Demo must never reach the evaluator, so a simulated run cannot cost anything.
+        # Demo skips worker providers but still sends each simulated batch to the local judge.
         state['mode'] = 'demo'
-        with patch.object(providers, 'ask', AsyncMock(side_effect=AssertionError('demo called the evaluator'))):
+        demo_judge = AsyncMock(return_value=dict(grades=[dict(id=i, correct=True, score=99, reason='Within tolerance') for i in range(10)]))
+        with patch.object(exchange, 'ask', AsyncMock(side_effect=AssertionError('demo called a worker provider'))), \
+                patch.object(providers, 'ask', demo_judge):
             asyncio.run(exchange.benchmark(state))
+        self.assertEqual(demo_judge.call_count, 3)
 
     def test_missing_local_model_prevents_paid_worker_calls(self):
         plan = evaluation.BenchmarkPlan(goal='Summarize', method='rubric', rubric='Preserve facts').model_dump()
@@ -171,13 +174,14 @@ class EvaluationCheck(unittest.TestCase):
             self.assertFalse(exchange.market['running'])
             ask.assert_not_called()
 
-    def test_live_run_without_evaluator_key_makes_no_worker_calls(self):
+    def test_demo_run_preflights_local_judge(self):
         exchange.market['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact').model_dump()
-        with TestClient(exchange.app) as client, patch.dict(os.environ, {'GEMINI_API_KEY': ''}), \
-                patch.object(providers, 'readiness', return_value=[]), patch.object(exchange, 'ask', AsyncMock()) as ask:
-            response = client.post('/api/rounds', json=dict(mode='live'))
+        with TestClient(exchange.app) as client, \
+                patch.object(providers, 'local_models_ready', AsyncMock(side_effect=ConnectionError())), \
+                patch.object(exchange, 'ask', AsyncMock()) as ask:
+            response = client.post('/api/rounds', json=dict(mode='demo'))
             self.assertEqual(response.status_code, 400)
-            self.assertIn('GEMINI_API_KEY', response.json()['detail'])
+            self.assertIn('Ollama judge', response.json()['detail'])
             ask.assert_not_called()
 
     def test_live_run_keeps_evaluator_usage_out_of_worker_metrics(self):
@@ -302,12 +306,12 @@ class EvaluationCheck(unittest.TestCase):
             self.assertNotIn('benchmark_plan', exchange.market['dataset'])
 
     def test_open_ended_plan_saves_without_extra_criteria(self):
-        # Extra criteria are optional now: the reference answer is the ground truth Gemini compares against.
+        # Extra criteria are optional: the reference answer is the ground truth Ollama compares against.
         with TestClient(exchange.app) as client:
             saved = client.put('/api/benchmark', json=dict(goal='Summarize faithfully',
                                execution_spec=json.dumps(dict(method='rubric', rubric=''))))
             self.assertEqual(saved.status_code, 200, saved.text)
-            self.assertEqual(saved.json()['evaluator'], dict(provider='gemini', model=providers.model_for('gemini')))
+            self.assertEqual(saved.json()['evaluator'], dict(provider='ollama', model=providers.model_for('ollama')))
 
     def test_repeat_disagreement_and_invalid_numeric_diagnostics(self):
         answers = [dict(answer=10, expected=10) for _ in range(20)]

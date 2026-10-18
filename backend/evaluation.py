@@ -1,4 +1,4 @@
-"""Reviewable task specifications. Gemini is the only evaluator of correctness."""
+"""Reviewable task specifications judged by the configured local Ollama model."""
 import json
 import math
 import random
@@ -56,8 +56,8 @@ class BenchmarkPlan(BenchmarkProtocol):
 
 
 def evaluator():
-    """The single evaluator. Verdicts are a hosted model's judgment, not a local rule."""
-    return dict(provider='gemini', model=providers.model_for('gemini'))
+    """The single evaluator. Verdicts are a local model's judgment, not a verified proof."""
+    return dict(provider='ollama', model=providers.model_for('ollama'))
 
 
 def validate_references(dataset, plan):
@@ -88,7 +88,7 @@ def latex_math_plan(goal, dataset):
         return None
     return BenchmarkPlan(
         goal=goal, method='rubric', selection='shuffled',
-        procedure='Solve ten uploaded integral questions and judge mathematical equivalence against their references. Reserve ten different questions for settlement. Gemini judges correctness; this is not a symbolic proof engine.',
+        procedure='Solve ten uploaded integral questions and judge mathematical equivalence against their references. Reserve ten different questions for settlement. Local Ollama judges correctness; this is not a symbolic proof engine.',
         instructions='Solve each supplied integral. Return each final mathematical answer as a LaTeX string. Include an arbitrary integration constant for indefinite integrals. JSON-escape backslashes in the answer strings.',
         rubric='Judge mathematical correctness rather than literal text equality. Accept equivalent algebraic and trigonometric expressions, plain math or LaTeX, and equivalent fraction or decimal representations. For indefinite integrals, check that differentiating the response recovers the integrand on its valid domain; accept antiderivatives differing by an additive constant and any name for the integration constant. Require an integration constant for indefinite integrals. Respect real domains, absolute values in logarithms, improper-integral convergence, and stated limits. Award 100 for a correct equivalent answer and 0 for an incorrect answer. Treat references as evidence and flag errors in them rather than blindly requiring their form.',
         pass_score=100,

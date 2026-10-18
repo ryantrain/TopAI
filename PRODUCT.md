@@ -25,7 +25,7 @@ The current reference use case is integral mathematics for students and teachers
 3. The user uploads one JSON, JSONL, or CSV dataset containing questions or task inputs and human-curated reference answers.
 4. The user reviews and saves the plan. It is frozen once the run starts.
 5. The benchmark runs in batches of 10 questions. The three demo agents receive the same batch, without reference answers, concurrently, and each answers all 10 in one call.
-6. Each agent's batch of answers goes to Gemini in a single call together with the reference answers. Gemini returns a correct / not correct verdict with a reason for each answer. Gemini is the only evaluator; there are no separate judge agents.
+6. Each simulated agent's batch of answers goes to local Ollama together with the reference answers. Ollama returns a correct / not correct verdict with a reason for each answer.
 7. The Python backend stores the verdicts and updates the UI graph and metric panels.
 8. A round runs two such stages: 10 public questions, then 10 unused holdout questions. Further rounds consume the next batches until the dataset is exhausted.
 9. The dashboard shows the accumulated evidence and highlights the best-performing agent for this specific experiment.
@@ -40,13 +40,13 @@ The first supported product story is evaluating agents on integral mathematics. 
 - producing worked solutions judged against teacher-authored criteria;
 - generating sets of integral practice questions.
 
-The user supplies the source material and reference answers. Ollama may propose how to describe the task, but it must not invent ground truth or silently commit benchmark criteria. Gemini may judge an answer against the user's reference, but it never supplies the reference itself.
+The user supplies the source material and reference answers. Ollama may propose how to describe the task and judge an answer against the user's reference, but it must not invent ground truth or silently commit benchmark criteria.
 
 ## Evaluation Model
 
 Each round uses 10 public examples and 10 fresh holdout examples. Every worker sees the same inputs. Reference answers remain outside worker prompts.
 
-Evaluation is a single mechanism: Gemini receives the question, the agent's answer, the reference answer, and the saved criteria, and decides whether the answer is correct. The previous set of selectable evaluation methods and judge agents is gone.
+Evaluation uses local Ollama: it receives the question, the simulated agent's answer, the reference answer, and the saved criteria, and decides whether the answer is correct.
 
 The saved criteria inform that decision rather than switching evaluators:
 
@@ -54,11 +54,11 @@ The saved criteria inform that decision rather than switching evaluators:
 - tolerance sets how close a numeric answer must be;
 - the pass threshold sets how strict to be on open-ended or partially correct answers.
 
-Ollama's role is confined to turning the user's request into those metrics before the run. Python's role is to store each verdict and update the interface.
+Ollama turns the user's request into metrics and judges the simulated answers. Python orchestrates the batches, stores each verdict, and updates the interface.
 
-Grading is batched to stay within Gemini's rate limits: one call per agent per stage, 10 answers each, three calls in flight at a time, for 6 Gemini calls per round. The interface therefore advances at stage boundaries, twice per round, not after each individual answer. The price chart is drawn at the public stage, on each trade, and at settlement.
+Grading is batched: one local Ollama call per agent per stage, 10 answers each, for 6 judge calls per round. The interface advances at stage boundaries, twice per round, not after each individual answer.
 
-The product reports accuracy or pass rate, elapsed time, provider-reported token efficiency, optional operator-supplied cost estimates, and an overall score relative to the selected lineup. Users can inspect individual questions, answers, and grading evidence.
+The product reports Ollama-judged accuracy or pass rate alongside seeded demo timing and token-efficiency values. Users can inspect individual questions, simulated answers, and grading evidence.
 
 ## Product Principles
 
@@ -74,11 +74,11 @@ The product reports accuracy or pass rate, elapsed time, provider-reported token
 
 - Plain-language task entry before or after dataset upload.
 - Local Ollama benchmark-metric drafting from the user's request.
-- Gemini verdicts on every answer, requested one batch per agent per stage.
+- Local Ollama verdicts on every answer, requested one batch per simulated agent per stage.
 - Stage-by-stage UI updates driven by the Python backend.
 - CSV, JSON, and JSONL imports with 20–2,000 examples.
 - Three configurable worker slots using Ollama, Gemini, OpenAI, or Anthropic.
-- A single Gemini-based evaluator covering numeric, exact, structured, and open-ended answers.
+- A single local Ollama evaluator covering numeric, exact, structured, and open-ended answers.
 - Public and holdout batches across 1–10 rounds.
 - Per-model accuracy, speed, token efficiency, estimated cost, and answer inspection.
 - SQLite storage by default, with optional TigerData/PostgreSQL archives.
@@ -90,12 +90,11 @@ The product reports accuracy or pass rate, elapsed time, provider-reported token
 - The current interface accepts one dataset file per active session; uploading another replaces it.
 - At least 20 distinct examples are required, with 20 consumed per round.
 - The importer catches exact duplicate questions but cannot detect semantic leakage or low-quality references.
-- Every verdict is a Gemini estimate. With no deterministic comparison left as a cross-check, accuracy figures require calibration against hand-graded examples before they support a recommendation.
-- Gemini may rule inconsistently on borderline answers, so two runs over the same data can differ.
-- Gemini must not be configured as one of the three demo agents; it would grade its own work.
+- Every verdict is an Ollama estimate. Accuracy figures require calibration against hand-graded examples before they support a recommendation.
+- Ollama may rule inconsistently on borderline answers, so repeated judgments can differ.
 - Evaluation sends questions, agent answers, and reference answers to Google. A fully offline run is not possible.
-- A failed or malformed Gemini batch fails that whole 10-answer stage for that agent rather than one answer, and the round is rolled back; no partial verdicts are invented.
-- Grading cost scales with the number of answers; the number of Gemini requests scales with agents and stages, at 6 per round.
+- A failed or malformed Ollama batch fails that whole 10-answer stage rather than one answer, and the round is rolled back; no partial verdicts are invented.
+- The number of local Ollama judge requests scales with agents and stages, at 6 per round.
 - Provider token counts are not directly comparable tokenizers or verified invoices.
 - Demo mode is simulated and cannot support claims about real model quality.
 - The virtual market is an exploratory visualization and is not financial trading.
@@ -123,4 +122,4 @@ For the current integral-test use case, the product succeeds when a student or t
 2. Replace legacy market-first language in the interface with evaluation-first language.
 3. Make the winning agent and the evidence behind its score the primary result.
 4. Add stronger educational metrics, such as method correctness and error-category breakdowns.
-5. Validate Gemini's verdicts against teacher judgments before using them for recommendations, and surface disagreement rates in the interface.
+5. Validate Ollama's verdicts against teacher judgments before using them for recommendations, and surface disagreement rates in the interface.

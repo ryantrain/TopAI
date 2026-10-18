@@ -177,8 +177,8 @@ async def benchmark(state, reveal=False):
             answers = result.get('answers')
             if not isinstance(answers, list) or len(answers) != 10:
                 raise ValueError(f'{worker["name"]} returned an invalid answer list')
-        if plan and (state['mode'] == 'live' or scoring == 'items'):
-            # Live verdicts come from Gemini; item counting stays local because it counts rather than judges.
+        if plan:
+            # Simulated and live answers use the same local judge; item counting remains deterministic.
             grades = await evaluation.grade(problems, answers, plan)
         else:
             # Demo never calls the evaluator: seeded answers are compared locally so a demo costs nothing.
@@ -456,6 +456,7 @@ async def start_round(request: StartRequest):
     if market['round'] and market['mode'] != request.mode:
         raise HTTPException(409, 'Start a new session before changing modes')
     dataset = market.get('dataset')
+    plan = dataset.get('benchmark_plan') if dataset else None
     if market['selection'] and not dataset:
         raise HTTPException(400, f'The selected files have {selection_count()} questions; each round needs 20. Select more files in the benchmark menu.')
     if dataset and (market['round'] + request.rounds) * 20 > dataset['count']:
@@ -466,10 +467,6 @@ async def start_round(request: StartRequest):
         except ValueError as error:
             raise HTTPException(400, str(error)) from None
         missing = providers.readiness(config)
-        plan = dataset.get('benchmark_plan') if dataset else None
-        # Fail before any paid worker call if the evaluator that must grade this run has no key.
-        if plan and plan['method'] != 'items' and not os.getenv('GEMINI_API_KEY'):
-            missing = missing + ['GEMINI_API_KEY (required: Gemini decides every verdict)']
         if missing:
             raise HTTPException(400, 'Set ' + ', '.join(missing) + ' in .env and restart the backend')
         if market['round'] and config != market.get('configuration'):
@@ -486,6 +483,13 @@ async def start_round(request: StartRequest):
             if market['running'] or market.get('dataset') is not dataset:
                 raise HTTPException(409, 'Market changed during readiness checks. Retry.')
         market['configuration'] = config
+    if plan and plan['method'] != 'items':
+        try:
+            await providers.local_models_ready([evaluation.evaluator()['model']])
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from None
+        except Exception:
+            raise HTTPException(400, 'Local Ollama judge is unavailable. Start Ollama on port 11434 and download OLLAMA_MODEL.') from None
     market.update(running=True, error=None, mode=request.mode, phase='benchmark')
     persist(market)
     task = asyncio.create_task(run_rounds(request.rounds))
