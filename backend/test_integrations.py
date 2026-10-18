@@ -24,10 +24,12 @@ class IntegrationCheck(unittest.TestCase):
             payload = json.loads(request.content)
             self.assertEqual(payload['generationConfig']['responseMimeType'], 'application/json')
             self.assertEqual(payload['contents'][0]['parts'][0]['text'], 'public history')
-            return httpx.Response(200, json={'candidates': [{'finishReason': 'STOP', 'content': {'parts': [{'thought': True, 'text': 'private thoughts'}, {'text': '{"orders": [], "reason": "Hold"}'}]}}]})
+            return httpx.Response(200, json={'usageMetadata': {'totalTokenCount': 321}, 'candidates': [{'finishReason': 'STOP', 'content': {'parts': [{'thought': True, 'text': 'private thoughts'}, {'text': '{"orders": [], "reason": "Hold"}'}]}}]})
         with patch.dict(os.environ, {'GEMINI_API_KEY': 'test-key'}), patch.object(providers.httpx, 'AsyncClient', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(respond), **kw)):
             result = asyncio.run(providers.ask('public history', 'Trade', provider='gemini'))
             self.assertEqual(result['orders'], [])
+            measured = asyncio.run(providers.ask('public history', 'Trade', provider='gemini', with_usage=True))
+            self.assertEqual(measured['_total_tokens'], 321)
         for raw in ['[]', '{"bad": NaN}', 'not JSON']:
             with self.assertRaises(ValueError):
                 providers.parse_object(raw)
@@ -40,12 +42,15 @@ class IntegrationCheck(unittest.TestCase):
                 'workers': [dict(provider=p, model=f'{p}-test') for p in ('openai', 'gemini', 'anthropic')],
                 'trader': dict(provider='gemini', model='gemini-test'), 'analyst': dict(provider='gemini', model='gemini-test')})
             problems = [dict(question=f'Question {i}?', answer=987654) for i in range(10)]
-            worker_mock = AsyncMock(return_value={'answers': [987654] * 10})
+            worker_mock = AsyncMock(return_value={'answers': [987654] * 10, '_total_tokens': 500})
             with patch.object(exchange, 'gsm8k_problems', return_value=problems), patch.object(exchange, 'ask', worker_mock):
                 await exchange.benchmark(state)
             self.assertEqual([c.kwargs['provider'] for c in worker_mock.call_args_list], ['openai', 'gemini', 'anthropic'])
             self.assertTrue(all('987654' not in c.args[0] for c in worker_mock.call_args_list))
             self.assertTrue(all(w['score'] == 100 for w in state['workers']))
+            self.assertTrue(all(w['scores'][0]['total_tokens'] == 500 for w in state['workers']))
+            self.assertTrue(all(w['scores'][0]['elapsed_seconds'] > 0 for w in state['workers']))
+            self.assertTrue(all(w['scores'][0]['correct'] == 10 for w in state['workers']))
             trader_mock = AsyncMock(return_value={'orders': [], 'reason': 'Waiting for a better entry.'})
             with patch.object(exchange, 'ask', trader_mock):
                 await exchange.trading(state)
@@ -63,6 +68,21 @@ class IntegrationCheck(unittest.TestCase):
             self.assertEqual(state['traders'], before)
             self.assertIsNone(state['analysis']['summary'])
         asyncio.run(check())
+
+    def test_demo_measurements_are_seeded_and_archivable(self):
+        first = exchange.initial_state()
+        first['round'] = 1
+        second = copy.deepcopy(first)
+        asyncio.run(exchange.benchmark(first))
+        asyncio.run(exchange.benchmark(second))
+        for a, b in zip(first['workers'], second['workers']):
+            sample = a['scores'][0]
+            self.assertEqual(sample, b['scores'][0])
+            self.assertEqual(sample['attempted'], 10)
+            self.assertGreater(sample['total_tokens'], 0)
+            self.assertGreater(sample['elapsed_seconds'], 0)
+            self.assertEqual(sample['correct'], sum(answer['correct'] for answer in a['answers']))
+        json.dumps(first, allow_nan=False)
 
     def test_readiness_and_configuration(self):
         with patch.dict(os.environ, {}, clear=True):
