@@ -62,6 +62,10 @@ def restore():
     state.setdefault('receipt', None)
     state.setdefault('library', [])
     state.setdefault('selection', [])
+    # Shared archives may retain dataset metadata after private worksheet rows are removed.
+    if state.get('dataset') and not isinstance(state['dataset'].get('problems'), list):
+        state['dataset'] = None
+        state['selection'] = []
     activity_ids = set()
     for item in state['activity']:
         if not isinstance(item.get('id'), str) or item['id'] in activity_ids:
@@ -515,8 +519,11 @@ class GoalRequest(BaseModel):
 
 @app.post('/api/benchmark/suggest')
 async def suggest_benchmark(request: GoalRequest):
+    dataset = market.get('dataset')
+    if dataset and not isinstance(dataset.get('problems'), list):
+        raise HTTPException(400, 'The selected worksheet questions are unavailable. Upload or select the worksheet again.')
     try:
-        return await evaluation.suggest(request.goal, market.get('dataset'))
+        return await evaluation.suggest(request.goal, dataset)
     except Exception:
         raise HTTPException(400, 'Could not produce a valid execution plan with local Ollama. Check that Ollama is running with OLLAMA_MODEL installed. Retry, or enter a supported JSON execution plan manually.') from None
 

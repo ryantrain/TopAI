@@ -68,6 +68,14 @@ class MarketCheck(unittest.TestCase):
         self.assertTrue(all(isinstance(item, str) for item in ids))
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_restore_clears_dataset_metadata_without_private_questions(self):
+        state = exchange.initial_state()
+        state.update(dataset=dict(name='stale', count=99), selection=['missing-file'])
+        exchange.persist(state)
+        restored = exchange.restore()
+        self.assertIsNone(restored['dataset'])
+        self.assertEqual(restored['selection'], [])
+
     def test_failed_round_rolls_back(self):
         exchange.market.clear()
         exchange.market.update(exchange.initial_state())
