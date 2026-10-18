@@ -179,12 +179,12 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
                 raise ValueError('Gemini did not return a complete answer')
             raw = ''.join(p.get('text', '') for p in candidates[0].get('content', {}).get('parts', []) if not p.get('thought'))
         else:
-            response = await client.post(
-                'https://api.anthropic.com/v1/messages',
-                headers={'x-api-key': key, 'anthropic-version': '2023-06-01'},
-                json={'model': model, 'max_tokens': 4096, 'system': instruction,
-                      'messages': [{'role': 'user', 'content': prompt}]},
-            )
+            body = {'model': model, 'max_tokens': 4096, 'system': instruction,
+                    'messages': [{'role': 'user', 'content': prompt}]}
+            if schema is not None:
+                body['output_config'] = {'format': {'type': 'json_schema', 'schema': schema}}
+            response = await client.post('https://api.anthropic.com/v1/messages',
+                                         headers={'x-api-key': key, 'anthropic-version': '2023-06-01'}, json=body)
             response.raise_for_status()
             data = response.json()
             usage = data.get('usage', {})

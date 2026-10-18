@@ -252,9 +252,16 @@ async def grade(problems, answers, plan):
             'the reference value for a missing response measurement. Metric definition: '
             + json.dumps(plan['task_metric']))
     failures = []
+    grade_schema = {'type': 'object', 'properties': {
+        'grades': {'type': 'array', 'items': {
+            'type': 'object', 'properties': {
+                'id': {'type': 'integer'}, 'correct': {'type': 'boolean'},
+                'score': {'type': 'number'}, 'reason': {'type': 'string'}},
+            'required': ['id', 'correct', 'score', 'reason'], 'additionalProperties': False}}},
+        'required': ['grades'], 'additionalProperties': False}
     for judge in evaluator_chain():
         try:
-            result = await providers.ask(json.dumps(items), instruction, **judge)
+            result = await providers.ask(json.dumps(items), instruction, schema=grade_schema, **judge)
             break
         except Exception as error:
             failures.append((judge['provider'], error))

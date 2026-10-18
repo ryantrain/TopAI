@@ -25,14 +25,20 @@ class SessionCheck(unittest.TestCase):
             provider='openai', model='test-model', label='Ada', credential_id='test-credential')])
         calls = []
 
-        async def ask(prompt, instruction, *, provider, model, credential_id, with_usage):
+        schemas = []
+
+        async def ask(prompt, instruction, *, provider, model, credential_id, with_usage, schema):
             calls.append((provider, model, credential_id, with_usage))
+            schemas.append(schema)
             return dict(answers=[0] * 10, _total_tokens=100)
 
         with patch.object(exchange, 'ask', ask):
             asyncio.run(exchange.benchmark(state))
         self.assertEqual(calls, [('openai', 'test-model', 'test-credential', True)])
         self.assertEqual(state['workers'][0]['label'], 'Ada')
+        # The structured response is enforced too, and numeric scoring asks for numeric answers.
+        self.assertEqual(schemas[0]['required'], ['answers'])
+        self.assertEqual(schemas[0]['properties']['answers']['items'], {'type': 'number'})
         self.assertEqual(len(state['workers'][0]['answers']), 10)
 
     def test_complete_quiz_and_persistence(self):
