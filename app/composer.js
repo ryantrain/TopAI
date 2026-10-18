@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Loader2, Plus, SlidersHorizontal, Wand2, X } from 'lucide-react';
+import { ArrowUp, Check, Loader2, Plus, SlidersHorizontal, Wand2, X } from 'lucide-react';
 import BenchmarkPicker from './benchmark-picker';
 import { readApiResponse } from './api-response.mjs';
 import { uploadWorksheets } from './library-api.mjs';
@@ -101,7 +101,7 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
     : tooSmall ? `Selected worksheets have ${dataset?.count ?? selectedCount} questions; a quiz needs 10. Add or tick more worksheets.`
     : !dataset ? 'Add or select a worksheet with at least 10 questions before starting.'
     : !drafted ? 'Press send to build benchmark metrics with local Ollama. Review them, then press send again to start.'
-    : `Ollama benchmark ready. Review the marking details, then press send to start ${rounds} ${rounds === 1 ? 'quiz' : 'quizzes'}.`;
+    : `Ollama benchmark ready. Review the marking details, then press Confirm to start ${rounds} ${rounds === 1 ? 'quiz' : 'quizzes'}.`;
 
   return <div className="composer-wrap">
     {drafting && step === 0 && <div className="planner-screen" role="status" aria-live="polite">
@@ -110,7 +110,7 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
     </div>}
     {details && step === 0 && <div className="composer-details">
       <div className="details-head"><strong>Marking details</strong><button type="button" className="icon-button" aria-label="Close marking details" onClick={() => setDetails(false)}><X size={15}/></button></div>
-      {drafted && <p className="muted">Ollama built these metrics from your request. Review them, then press send again to start.</p>}
+      {drafted && <p className="muted">Ollama built these metrics from your request. Review them, then press Confirm to start.</p>}
       {plan.unsupported_requirements?.length > 0 && <div className="unsupported"><strong>Not measured by this setup</strong><ul>{plan.unsupported_requirements.map(r => <li key={r}>{r}</li>)}</ul></div>}
       <div className="details-grid">
         <label>Evaluate using<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
@@ -120,6 +120,10 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
         {plan.method === 'rubric' && <label>Passing score / 100<input type="number" min="1" max="100" value={plan.pass_score} onChange={e => change('pass_score', e.target.value === '' ? '' : Number(e.target.value))}/></label>}
         {plan.method === 'items' && <label>What to count<input maxLength={40} value={plan.output_unit} onChange={e => change('output_unit', e.target.value)}/></label>}
       </div>
+      {drafted && <div className="details-actions">
+        <span className="muted">Starts {rounds} {rounds === 1 ? 'quiz' : 'quizzes'} with these settings.</span>
+        <button type="button" className="confirm-button" onClick={send} disabled={!canSend}>{busy ? <Loader2 size={14} className="spin"/> : <Check size={14}/>}Confirm</button>
+      </div>}
     </div>}
 
     {step === 0 && <div className="composer-options">
