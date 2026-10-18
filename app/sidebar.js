@@ -42,7 +42,7 @@ export default function Sidebar({ children }) {
     finally { setDeleting(false); }
   }
   return <aside className="sidebar">
-    <Link className="brand" href="/"><span className="brand-mark" aria-hidden="true"/>Agent Classroom</Link>
+    <Link className="brand" href="/"><span className="brand-mark" aria-hidden="true"/>TopAI</Link>
     <nav className="side-nav" aria-label="Dashboard">
       {PAGES.map(([href, label, Icon]) => <Link key={href} href={href} className={path === href ? 'on' : ''} aria-current={path === href ? 'page' : undefined}><Icon size={15}/>{label}</Link>)}
     </nav>
