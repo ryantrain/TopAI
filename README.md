@@ -66,19 +66,21 @@ You can keep credentials in `.env` instead. Copy `.env.example` to `.env`; `WORK
 
 ```dotenv
 GEMINI_API_KEY=your_key
-GEMINI_MODEL=gemini-3.8-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
 
 OPENAI_API_KEY=your_key
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=gpt-6-luna
 # Optional; blank uses OPENAI_MODEL.
 OPENAI_JUDGE_MODEL=
 
 WORKER_PROVIDERS=gemini,gemini,gemini
-WORKER_MODELS=gemini-3.8-flash,gemini-3.8-flash,gemini-3.8-flash
+WORKER_MODELS=gemini-2.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash-lite
 WORKER_COST_PER_1K_TOKENS=,,
 
 OLLAMA_MODEL=qwen2.5:7b
 ```
+
+The built-in cloud defaults are the budget models: `gpt-6-luna`, `gemini-2.5-flash-lite`, and `claude-haiku-5-5`. Choose **Custom model…** for another OpenAI or Anthropic model.
 
 At setup, choose **Use real agents** after entering the configuration, or **Skip and use 3 demo agents**. The app never silently changes a requested real-agent run into a demo.
 

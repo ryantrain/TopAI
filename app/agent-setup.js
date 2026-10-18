@@ -6,7 +6,7 @@ import { readApiResponse } from './api-response.mjs';
 
 const PROVIDERS = {
   openai: { label: 'OpenAI', model: 'gpt-6-luna' },
-  gemini: { label: 'Gemini', model: 'gemini-2.5-flash' },
+  gemini: { label: 'Gemini', model: 'gemini-2.5-flash-lite' },
   anthropic: { label: 'Anthropic', model: 'claude-haiku-5-5' },
   ollama: { label: 'Local Ollama', model: 'qwen2.5:7b' },
 };
@@ -14,14 +14,10 @@ const PROVIDERS = {
 const CUSTOM_MODEL = '__custom__';
 const MODEL_OPTIONS = {
   openai: [
-    ['gpt-6-luna', 'GPT-6 Luna'],
-    ['gpt-6-sol', 'GPT-6 Sol'],
-    ['gpt-6-astra', 'GPT-6 Astra'],
+    ['gpt-6-luna', 'GPT-6 Luna · budget'],
   ],
   anthropic: [
-    ['claude-haiku-5-5', 'Claude Haiku 5.5'],
-    ['claude-sonnet-5-5', 'Claude Sonnet 5.5'],
-    ['claude-opus-5-5', 'Claude Opus 5.5'],
+    ['claude-haiku-5-5', 'Claude Haiku 5.5 · budget'],
   ],
 };
 
