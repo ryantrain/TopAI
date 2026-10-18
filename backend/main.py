@@ -219,6 +219,8 @@ async def run_round():
                 detail = f'{service} HTTP {error.response.status_code}'
             elif isinstance(error, evaluation.JudgeChainError):
                 detail = str(error)
+            elif isinstance(error, providers.ProviderResponseError):
+                detail = str(error)
             else:
                 detail = type(error).__name__
             session.update(running=False, phase='error', error=f'Quiz rolled back ({detail}). Check the backend terminal and API configuration.')
