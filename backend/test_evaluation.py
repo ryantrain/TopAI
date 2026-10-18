@@ -23,14 +23,48 @@ class EvaluationCheck(unittest.TestCase):
                 grades = asyncio.run(evaluation.grade([dict(question='Count', answer='4')], ['4'], plan))
             self.assertEqual(grades[0]['task_metric_value'], value)
             self.assertIn('Apples counted', ask.call_args.args[1])
+            item_schema = ask.call_args.kwargs['schema']['properties']['grades']['items']
+            self.assertIn('task_metric_value', item_schema['required'])
+            self.assertEqual(item_schema['properties']['task_metric_value']['type'], ['number', 'null'])
             metrics = evaluation.diagnostics(grades, plan)
             self.assertEqual(metrics['task_metric_mean'], value)
             self.assertEqual(metrics['task_metric_count'], int(value is not None))
         verdict['grades'][0]['task_metric_value'] = 'four'
         with patch.object(providers, 'ask', AsyncMock(return_value=verdict)):
-            with self.assertRaisesRegex(ValueError, 'invalid task metric'):
+            with self.assertRaisesRegex(evaluation.JudgeChainError, 'invalid task metric'):
                 asyncio.run(evaluation.grade([dict(question='Count', answer='4')], ['4'], plan))
         self.assertNotIn('task_metric_mean', evaluation.diagnostics([], dict(method='exact')))
+
+    def test_generation_goal_reaches_workers_and_judge(self):
+        goal = 'Create three integral problems per example without solutions.'
+        plan = evaluation.BenchmarkPlan(goal=goal, method='rubric', instructions=goal,
+                                        rubric='Check three relevant problems without solutions.').model_dump()
+        state = exchange.initial_state()
+        state.update(round=1, mode='live', dataset=copy.deepcopy(exchange.session['dataset']))
+        state['dataset'].update(instructions='Solve each supplied integral.', benchmark_plan=plan)
+        worker = AsyncMock(return_value=dict(answers=['Three new integral problems'] * 10, _total_tokens=100))
+        judge = AsyncMock(return_value=dict(grades=[dict(id=i, correct=True, score=100, reason='Meets generation criteria') for i in range(10)]))
+        with patch.object(exchange, 'ask', worker), patch.object(providers, 'ask', judge):
+            asyncio.run(exchange.benchmark(state))
+        for call in worker.call_args_list:
+            self.assertIn(goal, call.args[1])
+            self.assertNotIn('Solve each supplied integral.', call.args[1])
+            self.assertNotIn('reference', call.args[0])
+        self.assertIn(goal, judge.call_args.args[1])
+        self.assertIn('source references provide context', judge.call_args.args[1])
+
+    def test_malformed_judge_response_uses_next_provider(self):
+        plan = evaluation.BenchmarkPlan(goal='Check answer', task_metric=dict(
+            name='Match', unit='score', instruction='1 for match, 0 otherwise')).model_dump()
+        malformed = dict(grades=[dict(id=0, correct=True, score=100, reason='Matches')])
+        valid = copy.deepcopy(malformed)
+        valid['grades'][0]['task_metric_value'] = 1
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'configured', 'GEMINI_API_KEY': 'configured'}), \
+                patch.object(providers, 'ask', AsyncMock(side_effect=[malformed, valid])) as ask:
+            grades = asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['A'], plan))
+        self.assertEqual([call.kwargs['provider'] for call in ask.call_args_list], ['openai', 'gemini'])
+        self.assertEqual(grades[0]['task_metric_value'], 1)
+        self.assertEqual(grades[0]['evaluator_provider'], 'gemini')
 
     def test_evaluator_priority(self):
         with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured', 'OPENAI_API_KEY': 'configured'}):
@@ -143,7 +177,7 @@ class EvaluationCheck(unittest.TestCase):
                        [dict(id=0, correct=True, score=101, reason='x')],
                        [dict(id=0, correct=True, score=90, reason='  ')]]:
             with patch.object(providers, 'ask', AsyncMock(return_value=dict(grades=grades))):
-                with self.assertRaises(ValueError):
+                with self.assertRaises(evaluation.JudgeChainError):
                     asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['B'], plan))
 
     def test_plan_api_validation_freeze_and_persistence(self):
@@ -214,7 +248,7 @@ class EvaluationCheck(unittest.TestCase):
         with patch.object(exchange, 'ask', mock), patch.object(providers, 'ask', judge):
             asyncio.run(exchange.benchmark(state))
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
-        self.assertNotIn(plan['goal'], mock.call_args.args[1])
+        self.assertIn(plan['goal'], mock.call_args.args[1])
         self.assertNotIn('answer', mock.call_args.args[0])
         # Demo skips worker providers but still sends each simulated batch to the configured judge.
         state['mode'] = 'demo'
@@ -338,7 +372,7 @@ class EvaluationCheck(unittest.TestCase):
             self.assertEqual(ask.call_count, 9)
             public = set(calls[0][0])
             self.assertTrue(all(set(q) == public for q, _ in calls))
-            self.assertNotIn(body['goal'], calls[0][1])
+            self.assertIn(body['goal'], calls[0][1])
             self.assertTrue(all(isinstance(question, str) for question in calls[0][0]))
             for worker in state['workers']:
                 score = worker['scores'][0]
@@ -356,16 +390,51 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual(evaluation.select_problems(dataset, 0, response.json()), evaluation.select_problems(dataset, 0, response.json()))
         self.assertEqual(dataset['problems'][0]['question'], 'Input 0')
 
-    def test_invalid_or_unsupported_execution_plans_do_not_persist(self):
+    def test_invalid_plans_rejected_but_unsupported_measurements_can_run(self):
         with TestClient(exchange.app) as client:
             for protocol in [dict(repetitions=6), dict(repetitions=True), dict(selection='invent tests'), dict(run_python='print(1)')]:
                 response = client.put('/api/benchmark', json=dict(goal='Test', execution_spec=json.dumps(protocol)))
                 self.assertEqual(response.status_code, 422, response.text)
             self.assertEqual(client.put('/api/benchmark', json=dict(goal='Test', execution_spec='not JSON')).status_code, 422)
             unsupported = dict(unsupported_requirements=['Needs image inputs'])
-            response = client.put('/api/benchmark', json=dict(goal='Test', execution_spec=json.dumps(unsupported)))
-            self.assertEqual(response.status_code, 400)
-            self.assertNotIn('benchmark_plan', exchange.session['dataset'])
+            with patch.object(providers, 'ask', AsyncMock(side_effect=RuntimeError('Unavailable'))):
+                response = client.put('/api/benchmark', json=dict(goal='Test', execution_spec=json.dumps(unsupported)))
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()['unsupported_requirements'], [])
+            self.assertIn('AI-assessed', response.json()['task_metric']['name'])
+
+    def test_failed_metric_planner_still_runs_with_selected_measurement(self):
+        plan = evaluation.BenchmarkPlan(goal='Check exact answers',
+            unsupported_requirements=['code_execution', 'exact_answer_matching', 'dataset_fact_verification'])
+        with patch.object(providers, 'ask', AsyncMock(side_effect=RuntimeError('Unavailable'))):
+            resolved = asyncio.run(evaluation.resolve_measurements(plan)).model_dump()
+        self.assertEqual(resolved['task_metric']['name'], 'Exact answer match')
+        self.assertEqual(resolved['unsupported_requirements'], [])
+        exchange.session['dataset']['benchmark_plan'] = resolved
+        exchange.session.update(round=1, mode='live')
+        verdict = dict(grades=[dict(id=i, correct=True, score=100, reason='Matches', task_metric_value=1)
+                              for i in range(10)])
+        with patch.object(exchange, 'ask', AsyncMock(return_value=dict(answers=['reference'] * 10, _total_tokens=100))), \
+                patch.object(providers, 'ask', AsyncMock(return_value=verdict)):
+            asyncio.run(exchange.benchmark(exchange.session))
+        for worker in exchange.session['workers']:
+            self.assertEqual(worker['scores'][0]['attempted'], 10)
+            self.assertEqual(worker['scores'][0]['diagnostics']['task_metric_mean'], 1)
+
+    def test_unsupported_measurements_become_one_saved_priority_metric(self):
+        metric = dict(name='Exact answer match', unit='match / answer',
+                      instruction='Return 1 for a literal response/reference match, otherwise 0. Higher is better.')
+        protocol = evaluation.BenchmarkProtocol(task_metric=metric,
+            procedure='Compare expected and actual answers. Code is not executed.').model_dump()
+        with TestClient(exchange.app) as client, patch.object(providers, 'ask', AsyncMock(return_value=protocol)) as ask:
+            response = client.put('/api/benchmark', json=dict(goal='Match expected answers',
+                unsupported_requirements=['exact_answer_matching', 'code_execution', 'dataset_fact_verification']))
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['task_metric'], metric)
+        self.assertEqual(response.json()['unsupported_requirements'], [])
+        self.assertEqual(json.loads(response.json()['execution_spec'])['task_metric'], metric)
+        self.assertEqual(ask.call_args.kwargs['provider'], 'openai')
+        self.assertIn('ONE most important', ask.call_args.args[1])
 
     def test_open_ended_plan_saves_without_extra_criteria(self):
         # Extra criteria are optional: the reference answer is the judge's ground truth.

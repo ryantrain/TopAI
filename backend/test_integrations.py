@@ -30,6 +30,20 @@ class IntegrationCheck(unittest.TestCase):
         self.assertEqual(request['input'], 'JSON input:\nquestion batch')
         self.assertEqual(request['text'], {'format': {'type': 'json_object'}})
 
+    def test_openai_enforces_supplied_schema_and_output_budget(self):
+        schema = {'type': 'object', 'properties': {'answers': {'type': 'array', 'items': {'type': 'string'}}},
+                  'required': ['answers'], 'additionalProperties': False}
+        client = MagicMock()
+        client.responses.create = AsyncMock(return_value=SimpleNamespace(output_text='{"answers":["A"]}', usage=None))
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=None)
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}), patch('openai.AsyncOpenAI', return_value=context):
+            asyncio.run(providers.ask('Q', 'Answer', schema=schema, max_tokens=8192))
+        request = client.responses.create.await_args.kwargs
+        self.assertEqual(request['text']['format'], dict(type='json_schema', name='benchmark_response', schema=schema, strict=True))
+        self.assertEqual(request['max_output_tokens'], 8192)
+
     def test_browser_agent_configuration_keeps_keys_private(self):
         client = MagicMock()
         client.responses.create = AsyncMock(return_value=SimpleNamespace(output_text='{"status":"ready"}', usage=None))

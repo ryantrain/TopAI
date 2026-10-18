@@ -158,11 +158,11 @@ export default function ClassroomPage() {
               onToggle={step === 0 ? toggle : null} onOpen={step > 0 ? setSelected : null} compact={step > 0}/>
             {step === 2 && <Recommendation pick={pick} minimum={minimum} setMinimum={setMinimum}/>}
           </div>
-          {step === 1 && <div className="stage-right"><ProgressChart agents={inClass} live/></div>}
+          {step === 1 && <div className="stage-right"><ProgressChart taskMetric={session?.dataset?.benchmark_plan?.task_metric} agents={inClass} live/></div>}
           {step === 2 && <div className="stage-right">
             <details className="drawer chart-drawer" open>
               <summary>Chart<ChevronDown size={16} aria-hidden="true"/></summary>
-              <ProgressChart agents={inClass} height={240}/>
+              <ProgressChart taskMetric={session?.dataset?.benchmark_plan?.task_metric} agents={inClass} height={240}/>
             </details>
             <ReportCard taskMetric={session?.dataset?.benchmark_plan?.task_metric} rows={rows} winner={pick?.worker.id} onSelect={setSelected}/>
           </div>}

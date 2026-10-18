@@ -175,7 +175,8 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
         async with AsyncOpenAI(api_key=key, timeout=75, max_retries=1) as client:
             response = await client.responses.create(
                 model=model, instructions=instruction, input='JSON input:\n' + prompt,
-                text={'format': {'type': 'json_object'}}, max_output_tokens=4096,
+                text={'format': {'type': 'json_schema', 'name': 'benchmark_response', 'schema': schema, 'strict': True}
+                      if schema is not None else {'type': 'json_object'}}, max_output_tokens=max_tokens,
             )
         result = parse_provider_object(response.output_text, provider, model)
         if with_usage:

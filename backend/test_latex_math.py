@@ -34,9 +34,9 @@ class LatexMathCheck(unittest.TestCase):
                 self.assertEqual(exchange.restore()['dataset']['benchmark_plan'], plan)
                 self.assertEqual(json.loads(plan['execution_spec'])['method'], 'rubric')
 
-    def test_planner_receives_references_and_cannot_choose_numeric_for_symbolic_math(self):
+    def test_planner_receives_references_for_symbolic_math(self):
         dataset = datasets.parse_dataset(json.dumps(self.rows()).encode(), 'integrals.json', 'exact')
-        protocol = evaluation.BenchmarkProtocol(method='exact', instructions='Solve each integral.').model_dump()
+        protocol = evaluation.BenchmarkProtocol(method='rubric', instructions='Solve each integral.').model_dump()
         with patch.object(providers, 'local_models_ready', AsyncMock()), patch.object(providers, 'ask', AsyncMock(return_value=protocol)) as ask:
             plan = asyncio.run(evaluation.suggest('Solve integrals', dataset))
         context = json.loads(ask.call_args.args[0])
@@ -44,6 +44,23 @@ class LatexMathCheck(unittest.TestCase):
         self.assertEqual(plan['method'], 'rubric')
         self.assertEqual(json.loads(plan['execution_spec'])['method'], 'rubric')
         self.assertNotIn(self.rows()[1]['answer'], plan['instructions'])
+
+    def test_generation_instructions_are_not_replaced_by_solving_template(self):
+        dataset = datasets.parse_dataset(json.dumps(self.rows()).encode(), 'integrals.json', 'exact')
+        dataset['instructions'] = 'Solve each supplied integral.'
+        goal = 'Create a set of three integral problems based on each dataset example, without solutions.'
+        for method in ('exact', 'rubric'):
+            protocol = evaluation.BenchmarkProtocol(
+                method=method, instructions=goal, procedure='Generate three new problems per example.',
+                rubric='Check relevance, difficulty and three distinct problems; no solutions.').model_dump()
+            with patch.object(providers, 'local_models_ready', AsyncMock()), patch.object(providers, 'ask', AsyncMock(return_value=protocol)) as ask:
+                plan = asyncio.run(evaluation.suggest(goal, dataset))
+            self.assertEqual(plan['goal'], goal)
+            self.assertEqual(plan['instructions'], goal)
+            self.assertEqual(json.loads(plan['execution_spec'])['instructions'], goal)
+            self.assertEqual(plan['rubric'], protocol['rubric'])
+            self.assertNotIn('math_template', json.loads(ask.call_args.args[0]))
+            self.assertIn('not solve the existing integrals', ask.call_args.args[1])
 
     def test_detection_leaves_other_datasets_alone(self):
         self.assertIsNone(evaluation.latex_math_plan('Classify', exchange.session['dataset']))

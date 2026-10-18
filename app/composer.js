@@ -113,6 +113,8 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
     {details && step === 0 && <div className="composer-details">
       <div className="details-head"><strong>Marking details</strong><button type="button" className="icon-button" aria-label="Close marking details" onClick={() => setDetails(false)}><X size={15}/></button></div>
       {drafted && <p className="muted">Ollama built these metrics from your request. Review them, then press Confirm to start.</p>}
+      {plan.task_metric && <p><strong>{plan.task_metric.name} ({plan.task_metric.unit})</strong>: {plan.task_metric.instruction}</p>}
+      {plan.procedure && <p className="muted">{plan.procedure}</p>}
       {plan.unsupported_requirements?.length > 0 && <div className="unsupported"><strong>Not measured by this setup</strong><ul>{plan.unsupported_requirements.map(r => <li key={r}>{r}</li>)}</ul></div>}
       <div className="details-grid">
         <label>How answers are marked<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select><small>{METHOD_HINTS[plan.method]}</small></label>

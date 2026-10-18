@@ -99,7 +99,7 @@ const endLabel = (name, last) => function EndLabel({ x, y, index }) {
 };
 
 // Running totals per aspect, one point per completed quiz, drawn in as each quiz finishes.
-export default function ProgressChart({ agents, live, height = 300 }) {
+export default function ProgressChart({ agents, live, height = 300, taskMetric }) {
   const [aspect, setAspect] = useState('accuracy');
   const box = useRef(null);
   // Recompute the series only when a quiz finishes, not on every animation frame or poll.
@@ -115,16 +115,18 @@ export default function ProgressChart({ agents, live, height = 300 }) {
   const shown = visibleRows(rows, ids, frame.progress);
   const drawing = frame.progress < end - 1e-3;
   const yTicks = Array.from({ length: 5 }, (_, i) => +(yTarget * i / 4).toPrecision(6));
-  const info = ASPECTS[aspect];
+  const aspects = taskMetric ? { ...ASPECTS, taskMetric: { label: taskMetric.name, unit: taskMetric.unit, hint: taskMetric.instruction } } : ASPECTS;
+  const info = aspects[aspect] || ASPECTS.accuracy;
   return <div className="chart-shell">
     <div className="folder-tabs" role="tablist" aria-label="Aspect to inspect">
-      {Object.entries(ASPECTS).map(([key, a]) => <button type="button" role="tab" aria-selected={aspect === key} key={key} className={aspect === key ? 'on' : ''} onClick={() => setAspect(key)}>{a.label}</button>)}
+      {Object.entries(aspects).map(([key, a]) => <button type="button" role="tab" aria-selected={aspect === key} key={key} className={aspect === key ? 'on' : ''} onClick={() => setAspect(key)}>{a.label}</button>)}
     </div>
     <section className="chart-card" aria-label={`${info.label} chart`}>
       <div className="chart-head">
-        <div><h2>{info.label}{live && <span className="live-dot">Live</span>}</h2><p>{info.hint} {info.better === 'lower' ? 'Lower is better.' : 'Higher is better.'}</p></div>
+        <div><h2>{info.label}{live && <span className="live-dot">Live</span>}</h2><p>{info.hint} {info.better ? (info.better === 'lower' ? 'Lower is better.' : 'Higher is better.') : ''}</p></div>
         <div className="legend">{agents.map(w => <span key={w.id}><i style={{ background: w.color }}/>{w.name}<b>{formatAspect(aspect, rows.at(-1)?.[w.id])}</b></span>)}</div>
       </div>
+      <p className="fine-print">X: completed quizzes · Y: {info.label} ({info.unit})</p>
       <div className="chart-box" ref={box} style={{ height }}>
         {hasData
           ? <ResponsiveContainer width="100%" height="100%"><LineChart data={shown} margin={{ top: 10, right: 56, left: 0, bottom: 4 }}>
