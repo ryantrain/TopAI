@@ -192,6 +192,7 @@ async def benchmark(state):
     config = state.get('configuration') or providers.configuration()
 
     async def solve_once(index, worker, attempt):
+        worker['status'] = f'Answering trial {attempt + 1}'
         started = time.perf_counter()
         if state['mode'] == 'demo':
             rng = random.Random(seed + index * 31 + attempt * 1009)
@@ -216,11 +217,12 @@ async def benchmark(state):
             answers = result.get('answers')
             if not isinstance(answers, list) or len(answers) != len(problems):
                 raise ValueError(f'{worker["name"]} returned an invalid answer list')
-        if plan:
-            # Gemini grades in both modes: the demo agents are simulated, the verdicts are real.
+        if plan and (state['mode'] == 'live' or scoring == 'items'):
+            # Demo answers are seeded simulations; only live answers need model judging.
+            worker['status'] = f'Grading trial {attempt + 1}'
             grades = await evaluation.grade(problems, answers, plan)
         else:
-            # No saved plan (the built-in GSM8K fallback): compare locally, with no evaluator call.
+            # Demo correctness is known from the seeded answers; unplanned runs also compare locally.
             method = 'exact' if scoring in ('rubric', 'json') else scoring
             tolerance = dataset.get('tolerance', 1e-6) if dataset else 1e-6
             grades = []
@@ -237,11 +239,19 @@ async def benchmark(state):
 
     async def solve(index, worker):
         attempts = [await solve_once(index, worker, attempt) for attempt in range(plan.get('repetitions', 1) if plan else 1)]
+        worker['status'] = 'Complete'
         details = [answer for answers, _, _ in attempts for answer in answers]
         tokens = sum(tokens for _, tokens, _ in attempts) if all(tokens is not None for _, tokens, _ in attempts) else None
         return details, tokens, sum(elapsed for _, _, elapsed in attempts)
 
-    results = await asyncio.gather(*(solve(i, w) for i, w in enumerate(state['workers'])))
+    jobs = [asyncio.create_task(solve(i, w)) for i, w in enumerate(state['workers'])]
+    try:
+        results = await asyncio.wait_for(asyncio.gather(*jobs), timeout=300)
+    finally:
+        # gather does not cancel siblings on failure; abandoned inference used to block retries.
+        for job in jobs:
+            job.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
     for index, (worker, (answers, tokens, elapsed)) in enumerate(zip(state['workers'], results)):
         worker['provider'] = 'simulated' if state['mode'] == 'demo' else config['workers'][index]['provider']
         worker['model'] = 'Seeded demo' if state['mode'] == 'demo' else config['workers'][index]['model']
@@ -376,7 +386,10 @@ async def run_round():
         except Exception as error:
             market.clear()
             market.update(before)
-            market.update(running=False, phase='error', error=f'Round rolled back ({type(error).__name__}). Check the backend terminal and API configuration.')
+            message = ('Model processing timed out. The round was cancelled; retry with fewer questions per batch.'
+                       if isinstance(error, (TimeoutError, httpx.TimeoutException)) else
+                       f'Round rolled back ({type(error).__name__}). Check the backend terminal and API configuration.')
+            market.update(running=False, phase='error', error=message)
             # Do not log exception text: provider errors may include sensitive request data.
             print(f'Round failed: {type(error).__name__}', flush=True)
         persist(market)
@@ -471,21 +484,19 @@ async def start_round(request: StartRequest):
         raise HTTPException(400, f'The selected files have {selection_count()} questions; each round needs {size}. Select more files in the benchmark menu.')
     if dataset and (market['round'] + request.rounds) * size > dataset['count']:
         raise HTTPException(400, f'Not enough unused questions. Each round needs {size}; upload a larger dataset in a new session.')
-    # Gemini grades a saved plan in demo mode too, so fail here rather than mid-round.
-    if dataset and dataset.get('benchmark_plan') and not os.getenv('GEMINI_API_KEY'):
-        raise HTTPException(400, 'Set GEMINI_API_KEY in .env and restart the backend. Gemini decides every verdict.')
     if request.mode == 'live':
         try:
             config = providers.configuration()
         except ValueError as error:
             raise HTTPException(400, str(error)) from None
-        # readiness covers the evaluator's key too, so a run that could not be graded never starts.
         missing = providers.readiness(config)
         if missing:
             raise HTTPException(400, 'Set ' + ', '.join(missing) + ' in .env and restart the backend')
         if market['round'] and config != market.get('configuration'):
             raise HTTPException(409, 'Model configuration changed. Start a new session to keep benchmark history comparable.')
         local_models = [spec['model'] for spec in config['workers'] if spec['provider'] == 'ollama']
+        if not os.getenv('GEMINI_API_KEY'):
+            local_models.append(providers.model_for('ollama'))
         if local_models:
             try:
                 await providers.local_models_ready(local_models)
@@ -538,7 +549,9 @@ class GoalRequest(BaseModel):
 @app.post('/api/benchmark/suggest')
 async def suggest_benchmark(request: GoalRequest):
     try:
-        return await evaluation.suggest(request.goal, market.get('dataset'))
+        return await asyncio.wait_for(evaluation.suggest(request.goal, market.get('dataset')), timeout=90)
+    except (TimeoutError, httpx.TimeoutException):
+        raise HTTPException(504, 'Benchmark drafting timed out. The local model may be busy; retry when the current run finishes, or save your criteria directly.') from None
     except Exception:
         raise HTTPException(400, 'Could not produce a valid execution plan with local Ollama. Check that Ollama is running with OLLAMA_MODEL installed. Retry, or enter a supported JSON execution plan manually.') from None
 
@@ -647,10 +660,6 @@ async def convert_file(request: ConvertRequest):
         raise HTTPException(422, str(error)) from None
     if entry:
         return save_converted(entry)
-    # Worksheets are parsed with Gemini behind the scenes; setup details go to the server log, not the page.
-    if not os.getenv('GEMINI_API_KEY'):
-        print('Worksheet upload failed: set GEMINI_API_KEY in .env and restart the backend.', flush=True)
-        raise HTTPException(503, 'Worksheet uploads are not available right now.')
     try:
         text, attachment = library.document_input(request.filename, request.mime_type, data)
         prompt = f'File name: {request.filename}\n\n' + (text or 'The document is attached.')

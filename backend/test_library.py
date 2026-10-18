@@ -150,6 +150,18 @@ class LibraryCheck(unittest.TestCase):
             gemini.assert_called_once()
             self.assertEqual(send(client, 'empty.json', json.dumps([{'question': '', 'answer': ''}]))[0].status_code, 422)
 
+    def test_labeled_questions_import_without_a_model(self):
+        text = 'Q: What is 2 + 2?\nA: 4\n\nQuestion: Capital of France?\nAnswer: Paris\n'
+        with TestClient(exchange.app) as client, patch.object(exchange, 'ask', AsyncMock()) as model:
+            response = client.post('/api/library/convert', json=dict(filename='custom.txt', data=base64.b64encode(text.encode()).decode()))
+        self.assertEqual(response.status_code, 200, response.text)
+        model.assert_not_called()
+        entry = exchange.worksheets[0]
+        self.assertEqual((entry['count'], entry['model_answers']), (2, 0))
+        self.assertEqual([p['answer'] for p in entry['problems']], ['4', 'Paris'])
+        for content in ('# Extra instructions\n' + text, text + 'Q: Missing answer', 'Q: Missing answer'):
+            self.assertIsNone(library.from_structured('custom.md', content.encode()))
+
     def test_worksheet_content_never_reaches_the_database(self):
         async def no_wait(_):
             pass

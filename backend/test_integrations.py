@@ -94,7 +94,7 @@ class IntegrationCheck(unittest.TestCase):
             self.assertNotIn('trader', config)
             self.assertNotIn('analyst', config)
             self.assertEqual(config['evaluator'], dict(provider='gemini', model=providers.model_for('gemini')))
-            self.assertEqual(providers.readiness(config), ['GEMINI_API_KEY', 'OPENAI_API_KEY'])
+            self.assertEqual(providers.readiness(config), ['OPENAI_API_KEY'])
             os.environ['WORKER_PROVIDERS'] = 'openai,invalid,gemini'
             with self.assertRaises(ValueError):
                 providers.configuration()

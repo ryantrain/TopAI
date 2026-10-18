@@ -5,7 +5,7 @@ import { readApiResponse } from './api-response.mjs';
 
 const methods = { exact: 'Exact answer / label', numeric: 'Numeric agreement', json: 'Structured JSON equality', rubric: 'Local rubric judge (Ollama)', items: 'Count distinct generated items' };
 
-export default function BenchmarkSetup({ dataset, locked, refresh, onSaved }) {
+export default function BenchmarkSetup({ dataset, locked, onSaved }) {
   const [plan, setPlan] = useState(dataset?.benchmark_plan || {
     goal: '', method: dataset?.scoring || 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: dataset?.tolerance ?? 0.000001, pass_score: 80,
   });
@@ -29,7 +29,7 @@ export default function BenchmarkSetup({ dataset, locked, refresh, onSaved }) {
       setError('Upload or select worksheets with at least 20 questions before saving benchmark criteria. Your draft will stay here.');
       return;
     }
-    setPending(true); setError(''); setMessage('');
+    setPending(suggest ? 'drafting' : 'saving'); setError(''); setMessage('');
     try {
       // Submit the edited fields instead of the backend’s previous serialized plan.
       const { judge_model, execution_spec, ...body } = plan;
@@ -39,7 +39,7 @@ export default function BenchmarkSetup({ dataset, locked, refresh, onSaved }) {
       });
       const data = await readApiResponse(response);
       if (suggest) { setPlan(data); setDirty(true); setMessage('Task benchmark drafted. Review how answers are evaluated, then save.'); }
-      else { setPlan(data); setDirty(false); onSaved(data); setMessage('Benchmark criteria saved for these worksheets.'); await refresh(); }
+      else { setPlan(data); setDirty(false); onSaved(data); setMessage('Benchmark criteria saved for these worksheets.'); }
     } catch (e) { setError(e.message); }
     finally { setPending(false); }
   }
@@ -52,7 +52,7 @@ export default function BenchmarkSetup({ dataset, locked, refresh, onSaved }) {
     </div>
     <fieldset disabled={locked || pending}>
       <label>Your specific need<textarea maxLength={4000} value={plan.goal} onChange={e => change('goal', e.target.value)} placeholder="I want the best model for grading papers."/></label>
-      <button type="button" className="text-button" disabled={!plan.goal.trim()} onClick={() => submit(true)}>{pending ? 'Working…' : 'Build benchmark from my request'}</button>
+      <button type="button" className="text-button" disabled={!plan.goal.trim()} onClick={() => submit(true)}>{pending === 'drafting' ? 'Drafting benchmark…' : 'Build benchmark from my request'}</button>
       <p>Describe the job in your own words, then review and save the generated benchmark.</p>
       <details className="benchmark-details" open={!!plan.goal}><summary>Review evaluation and scoring</summary><div className="benchmark-fields">
         <label>Evaluate using<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(methods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
@@ -62,7 +62,7 @@ export default function BenchmarkSetup({ dataset, locked, refresh, onSaved }) {
       </div>
       {plan.method === 'rubric' && <label>Judge criteria<textarea maxLength={8000} value={plan.rubric} onChange={e => change('rubric', e.target.value)} placeholder="Define correctness, completeness, tone, and what constitutes a failure. The judge can compare against your reference answers."/></label>}
       </details>
-      <button type="button" className="primary-button" disabled={!plan.goal.trim()} onClick={() => submit(false)}>{pending ? 'Working…' : 'Save benchmark criteria'}</button>
+      <button type="button" className="primary-button" disabled={!plan.goal.trim()} onClick={() => submit(false)}>{pending === 'saving' ? 'Saving criteria…' : 'Save benchmark criteria'}</button>
     </fieldset>
     {plan.method === 'items' ? <p>Efficiency = distinct {plan.output_unit || 'items'} generated ÷ total tokens × 1,000. Each response must be a JSON array of nonempty strings. Duplicates within a response count once after ignoring case and whitespace. This measures quantity, not relevance or originality. The format pass rate measures responses containing at least one item.</p> : plan.method === 'rubric' ? <p>Rubric scores are estimates from a local model. Calibrate them against human judgments. The comparison reports the fraction of responses passing your threshold; judge time and tokens are excluded from worker metrics.</p> : <p>Scoring runs directly in Python. JSON comparison ignores object key order but preserves array order and value types. Numeric comparison uses your allowed error.</p>}
     <p role="status">{message || (dirty ? 'Draft only. Upload worksheets and save the criteria to use this task benchmark.' : dataset?.benchmark_plan ? `Saved: ${dataset.benchmark_plan.goal} · ${methods[dataset.benchmark_plan.method]}` : 'Describe your task to build a benchmark from your worksheets.')}</p>

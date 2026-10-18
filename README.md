@@ -94,7 +94,7 @@ Requirements:
 - Node.js 20.9+
 - Python 3.11+
 - [Ollama](https://ollama.com/) for prompt parsing (turning the user request into benchmark metrics)
-- A `GEMINI_API_KEY` for answer unpacking and grading
+- A `GEMINI_API_KEY` for answer unpacking and grading, or local Ollama as fallback
 
 On macOS or Linux:
 
@@ -124,13 +124,13 @@ In a second terminal:
 npm run dev
 ```
 
-Open <http://127.0.0.1:3000>. Ollama must be running at `http://127.0.0.1:11434` to draft benchmark metrics from a request. `GEMINI_API_KEY` must be set for a live run with saved benchmark criteria, since Gemini decides every verdict. Demo mode never calls it.
+Open <http://127.0.0.1:3000>. Ollama must be running at `http://127.0.0.1:11434` to draft benchmark metrics from a request. Gemini is preferred for saved benchmark criteria; missing keys and HTTP 429 rate limits automatically use local `OLLAMA_MODEL` instead. Saved criteria are graded in demo mode too.
 
 ## Model configuration
 
 Copy `.env.example` to `.env`. Three worker slots can use OpenAI, Gemini, Anthropic, or local Ollama models. Avoid putting Gemini in a worker slot, since Gemini is the evaluator.
 
-Evaluation always uses Gemini, so `GEMINI_API_KEY` is required even when all three demo agents are local. For local demo agents:
+Evaluation prefers Gemini and falls back to local `OLLAMA_MODEL` when its key is missing or it returns HTTP 429. For local demo agents:
 
 ```dotenv
 OLLAMA_MODEL=qwen2.5:7b
@@ -158,7 +158,7 @@ Cloud workers can be configured with `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANT
 
 ### Worksheets
 
-Users only upload worksheets: PDFs, photos, Word, Excel, PowerPoint, or text files up to 10 MB each, several at a time. Behind the scenes the backend sends each file to Gemini (`GEMINI_API_KEY`; `GEMINI_CONVERT_MODEL`, falling back to `GEMINI_MODEL`), which extracts each question with one clear, short answer into question/answer data. The page never mentions the conversion. It uses the worksheet's answer key when there is one; answers it had to work out are counted per worksheet so users can check them. All-numeric answers use numeric scoring; anything else uses exact text matching, unless saved criteria choose another evaluation method. Setup and quota problems are logged on the server; the page shows a plain message.
+Users only upload worksheets: PDFs, photos, Word, Excel, PowerPoint, or text files up to 10 MB each, several at a time. Behind the scenes the backend sends each file to Gemini (`GEMINI_API_KEY`; `GEMINI_CONVERT_MODEL`, falling back to `GEMINI_MODEL`), which extracts each question with one clear, short answer into question/answer data. When the key is missing or Gemini returns HTTP 429, conversion uses local `OLLAMA_MODEL`: PDFs have their text extracted locally and images require an installed vision model. Scanned PDFs without text must be uploaded as page images or processed with Gemini. Install backend requirements after updating. The page never mentions the conversion. It uses the worksheet's answer key when there is one; answers it had to work out are counted per worksheet so users can check them. All-numeric answers use numeric scoring; anything else uses exact text matching, unless saved criteria choose another evaluation method. Setup and quota problems are logged on the server; the page shows a plain message.
 
 Every uploaded worksheet is saved to the worksheet menu next to **Run** and selected straight away; worksheets uploaded together are selected together. Tick one or more worksheets to combine them: questions alternate between worksheets so each round mixes them, and duplicates are dropped. Combined worksheets use numeric scoring only if every worksheet does. A selection needs at least 20 questions in total to run. **Forget** removes a worksheet from the menu. Saved worksheets survive **New session**; the selection is fixed once a session has run a round.
 
@@ -175,7 +175,7 @@ The dashboard reports:
 - an overall relative score across the selected worker lineup;
 - the underlying questions, answers, and Gemini's reason for each verdict.
 
-These update once per round, when the batch is graded. Timing and token figures cover the demo agents only; Gemini's grading latency and tokens are excluded.
+These update once per round, when the batch is graded. Demo mode simulates both answers and scores without model calls. Live timing and token figures cover workers only; evaluator latency and tokens are excluded. Local model requests run one at a time to avoid competing for the same accelerator.
 
 Results apply only to the uploaded dataset, saved criteria, configured models, Gemini's judgment, and run conditions. They are not universal model rankings. Demo mode uses seeded simulated answers, token counts, and timings and does not establish real model performance.
 

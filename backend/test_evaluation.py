@@ -57,7 +57,9 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual(grades[0]['evaluation_score'], 95)
         self.assertEqual(grades[1]['evaluation_reason'], 'Contradicts the reference')
         # The verdict is the evaluator's, so no local rule may override it.
-        self.assertEqual(mock.call_args.kwargs, dict(provider='gemini', model=providers.model_for('gemini')))
+        self.assertEqual(mock.call_args.kwargs['provider'], 'gemini')
+        self.assertEqual(mock.call_args.kwargs['model'], providers.model_for('gemini'))
+        self.assertEqual(mock.call_args.kwargs['schema']['properties']['grades']['maxItems'], 2)
         criteria = mock.call_args.args[1]
         self.assertIn('Return the mark', criteria)
         self.assertIn('Reject invented marks', criteria)
@@ -116,6 +118,7 @@ class EvaluationCheck(unittest.TestCase):
     def test_ollama_http_contract_and_preflight(self):
         real_client = httpx.AsyncClient
         expected_format = 'json'
+        expected_tokens = 8192
         def respond(request):
             self.assertEqual(request.url.host, '127.0.0.1')
             self.assertEqual(request.url.port, 11434)
@@ -123,15 +126,19 @@ class EvaluationCheck(unittest.TestCase):
                 return httpx.Response(200, json=dict(models=[dict(name='local-test:latest')]))
             body = json.loads(request.content)
             self.assertFalse(body['stream'])
+            self.assertIs(body['think'], False)
             self.assertEqual(body['format'], expected_format)
             self.assertEqual(body['options']['temperature'], 0)
+            self.assertEqual(body['options']['num_predict'], expected_tokens)
+            self.assertEqual(body['keep_alive'], '15m')
             self.assertNotIn('Authorization', request.headers)
             return httpx.Response(200, json=dict(done=True, done_reason='stop', message=dict(content='{"answers":["x"]}'), prompt_eval_count=20, eval_count=5))
         with patch.object(providers.httpx, 'AsyncClient', side_effect=lambda **kw: real_client(transport=httpx.MockTransport(respond), **kw)):
             result = asyncio.run(providers.ask('question', 'instruction', provider='ollama', model='local-test', with_usage=True))
             self.assertEqual(result['_total_tokens'], 25)
             expected_format = evaluation.BenchmarkProtocol.model_json_schema()
-            asyncio.run(providers.ask('question', 'instruction', provider='ollama', model='local-test', schema=expected_format))
+            expected_tokens = 2048
+            asyncio.run(providers.ask('question', 'instruction', provider='ollama', model='local-test', schema=expected_format, max_tokens=2048, timeout=60))
             asyncio.run(providers.local_models_ready(['local-test']))
             with self.assertRaises(ValueError):
                 asyncio.run(providers.local_models_ready(['missing']))
@@ -155,12 +162,12 @@ class EvaluationCheck(unittest.TestCase):
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
         self.assertNotIn(plan['goal'], mock.call_args.args[1])
         self.assertNotIn('answer', mock.call_args.args[0])
-        # The demo agents are simulated, but Gemini still grades them, so the verdicts are real.
+        # Demo results are entirely simulated and never wait for a real evaluator.
         state['mode'] = 'demo'
         graded_in_live = gemini.call_count
         with patch.object(providers, 'ask', gemini):
             asyncio.run(exchange.benchmark(state))
-        self.assertEqual(gemini.call_count - graded_in_live, 3)
+        self.assertEqual(gemini.call_count, graded_in_live)
         self.assertTrue(all(w['provider'] == 'simulated' for w in state['workers']))
 
     def test_missing_local_model_prevents_paid_worker_calls(self):
@@ -174,14 +181,15 @@ class EvaluationCheck(unittest.TestCase):
             self.assertFalse(exchange.market['running'])
             ask.assert_not_called()
 
-    def test_live_run_without_evaluator_key_makes_no_worker_calls(self):
+    def test_live_run_without_gemini_checks_local_fallback(self):
         exchange.market['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact', batch_size=10).model_dump()
-        # Real readiness must catch the missing evaluator key, so it is deliberately not patched.
+        # Missing Gemini uses Ollama; fail before workers if it is unavailable.
         with TestClient(exchange.app) as client, patch.dict(os.environ, {'GEMINI_API_KEY': ''}), \
-                patch.object(exchange, 'ask', AsyncMock()) as ask:
+                patch.object(exchange, 'ask', AsyncMock()) as ask, \
+                patch.object(providers, 'local_models_ready', AsyncMock(side_effect=ValueError('Download local fallback first'))):
             response = client.post('/api/rounds', json=dict(mode='live'))
             self.assertEqual(response.status_code, 400)
-            self.assertIn('GEMINI_API_KEY', response.json()['detail'])
+            self.assertIn('local fallback', response.json()['detail'])
             ask.assert_not_called()
 
     def test_live_run_keeps_evaluator_usage_out_of_worker_metrics(self):
@@ -216,6 +224,9 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual(schema['required'], list(evaluation.BenchmarkProtocol.model_fields))
         self.assertFalse(schema['additionalProperties'])
         self.assertEqual(json.loads(ask.call_args.args[0])['paper_grading_template']['repetitions'], 3)
+        self.assertNotIn('execution_spec', json.loads(ask.call_args.args[0])['paper_grading_template'])
+        self.assertEqual(ask.call_args.kwargs['max_tokens'], 2048)
+        self.assertEqual(ask.call_args.kwargs['timeout'], 60)
         self.assertEqual(json.loads(plan['execution_spec'])['selection'], 'shuffled')
         self.assertEqual(plan['goal'], goal)
         self.assertEqual(plan['method'], 'numeric')

@@ -55,7 +55,7 @@ The goal is compiled into explicit execution settings and scoring criteria. Revi
 
 The saved criteria (task instructions, tolerance, pass threshold, scoring notes) are passed to Gemini as context for its verdict. They no longer select a different evaluator or a different code path. Python does not re-compare the answer itself, and never executes generated code or uploaded scripts.
 
-Because Gemini is the only evaluator, its verdicts are the measurement. There is no second opinion and no deterministic fallback.
+Gemini is the preferred evaluator; missing keys and HTTP 429 responses use local `OLLAMA_MODEL`. These verdicts are model assessments, without a deterministic fallback.
 
 Reference answers can be numbers, text, or JSON text in the dataset’s `answer` field. Gemini is told the saved tolerance for numeric tasks and is asked to treat formatting differences, equivalent phrasings, and equivalent structures as correct. That flexibility is the point of using a model, and it is also why two runs over the same data can disagree on borderline answers.
 
@@ -63,11 +63,11 @@ Each verdict carries a short reason, shown in the worker details. The market sco
 
 ## Run locally
 
-Grading needs `GEMINI_API_KEY` set in `.env`, since Gemini decides every verdict. A live run with saved criteria refuses to start without it, so no paid worker calls are wasted on a run that could not be graded. The benchmark plan fields can be filled in manually without Ollama.
+Grading uses Gemini when `GEMINI_API_KEY` is set in `.env`, with local `OLLAMA_MODEL` as fallback for a missing key or HTTP 429. When the key is absent, live startup verifies that the local model is installed before workers run. The benchmark plan fields can be filled in manually without Ollama.
 
-For drafting the metrics, install Ollama separately, start its server on `127.0.0.1:11434`, and download a local model with `ollama pull MODEL_NAME`. Set `OLLAMA_MODEL` in the application’s `.env`. The default example is `qwen2.5:7b`; choose installed models appropriate to your hardware. The app does not install or download them automatically. There is no `OLLAMA_JUDGE_MODEL` any more — Ollama no longer grades anything.
+For drafting the metrics, install Ollama separately, start its server on `127.0.0.1:11434`, and download a local model with `ollama pull MODEL_NAME`. Set `OLLAMA_MODEL` in the application’s `.env`. The default example is `qwen2.5:7b`; choose installed models appropriate to your hardware. The app does not install or download them automatically. There is no `OLLAMA_JUDGE_MODEL` any more — The fallback evaluator uses `OLLAMA_MODEL` too.
 
-To keep the three demo agents local (grading still goes to Gemini), configure the worker roles:
+Demo mode simulates answers and grading without model calls. To use three local workers in live mode, configure the worker roles (the evaluator uses Gemini when available, otherwise local Ollama):
 
 ```dotenv
 WORKER_PROVIDERS=ollama,ollama,ollama
@@ -79,9 +79,9 @@ GEMINI_API_KEY=your-key
 GEMINI_MODEL=gemini-2.0-flash
 ```
 
-Restart the backend after changing `.env`. Use a custom dataset to avoid the built-in GSM8K download. Select **Live** to run real local inference; **Demo** continues to simulate results. `GEMINI_API_KEY` is required for any live run, because evaluation is no longer local.
+Restart the backend after changing `.env`. Use a custom dataset to avoid the built-in GSM8K download. Select **Live** to run real local inference; **Demo** continues to simulate results. Without `GEMINI_API_KEY`, evaluation uses local Ollama.
 
-Local-only operation is no longer possible for a full benchmark, since every verdict is a Gemini call. To keep Ollama itself from reaching its own cloud while it drafts metrics, disable cloud features in the **Ollama server**, using `OLLAMA_NO_CLOUD=1` or `disable_ollama_cloud` in its `server.json`, then restart Ollama. Setting that variable only in this app’s `.env` does not configure an already-running Ollama server. See [Ollama’s privacy and local-only configuration](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features). The app uses Ollama’s [local JSON chat API](https://docs.ollama.com/api/chat), never a user-supplied remote endpoint. Cloud-named models are rejected.
+Local-only benchmarks are possible with Ollama workers and no Gemini key. To keep Ollama itself from reaching its own cloud while it drafts metrics, disable cloud features in the **Ollama server**, using `OLLAMA_NO_CLOUD=1` or `disable_ollama_cloud` in its `server.json`, then restart Ollama. Setting that variable only in this app’s `.env` does not configure an already-running Ollama server. See [Ollama’s privacy and local-only configuration](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features). The app uses Ollama’s [local JSON chat API](https://docs.ollama.com/api/chat), never a user-supplied remote endpoint. Cloud-named models are rejected.
 
 The start endpoint checks that required local models are installed before issuing paid worker calls. This is a readiness check, not a guarantee that inference will fit in memory or produce valid results. Local inference has a five-minute request timeout.
 

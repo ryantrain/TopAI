@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 scratch = tempfile.TemporaryDirectory()
 os.environ['EXCHANGE_DB'] = str(Path(scratch.name) / 'test.sqlite3')
@@ -125,6 +125,7 @@ class MarketCheck(unittest.TestCase):
 
         with patch.object(exchange.asyncio, 'sleep', no_wait), \
              patch.object(exchange.providers, 'readiness', return_value=[]), \
+             patch.object(exchange.providers, 'local_models_ready', AsyncMock()), \
              patch.object(exchange, 'benchmark', benchmark), \
              patch.object(exchange, 'trading', no_operation), \
              patch.object(exchange, 'analyze', no_operation):
