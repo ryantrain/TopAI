@@ -111,11 +111,6 @@ export default function ClassroomPage() {
 
   return <div className="shell">
     <Sidebar>
-      <dl className="session">
-        <div><dt>Worksheet</dt><dd>{market?.dataset ? `${market.dataset.name} · ${market.dataset.count} q` : 'Sample questions'}</dd></div>
-        <div><dt>Run</dt><dd>{step === 0 ? '—' : market?.mode === 'live' ? 'Real models' : 'Practice (simulated)'}</dd></div>
-        <div><dt>Quizzes done</dt><dd>{market?.round || 0}</dd></div>
-      </dl>
       <button type="button" className="sidebar-button" onClick={newClass} disabled={!market || market.running || busy}><RotateCcw size={14}/>New class</button>
     </Sidebar>
 
@@ -124,13 +119,13 @@ export default function ClassroomPage() {
         <header className="page-head">
           <div>
             <p className="eyebrow">{STEPS[step]}</p>
-            <h1>{step === 0 ? 'Choose your agents and set the task' : step === 1 ? `Quiz ${quiz} of ${total} · ${phaseTitle}` : 'How the agents did'}</h1>
+            <h1>{step === 0 ? 'Choose your agents and set the task' : step === 1 ? `Round ${quiz} of ${total} · ${phaseTitle}` : 'How the agents did'}</h1>
             <p>{step === 0 ? 'Switch on the agents you want to compare, describe the task below, and add a worksheet with questions and answers.'
               : step === 1 ? `${phaseDetail}. Every agent gets the same questions without the answer key.`
               : goal || (market?.mode === 'demo' ? 'Practice run on sample questions.' : 'Run on the default questions.')}</p>
             {step === 1 && <div className="progress" role="progressbar" aria-label="Class progress" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress * 100}%` }}/></div>}
           </div>
-          {step === 2 && <button type="button" className="quiet-button" disabled={busy || remaining < 1} onClick={() => start({ mode: market.mode, rounds: 1, plan: null })} title={remaining < 1 ? 'No unused questions left' : undefined}><Play size={14}/>One more quiz</button>}
+          {step === 2 && <button type="button" className="quiet-button" disabled={busy || remaining < 1} onClick={() => start({ mode: market.mode, rounds: 1, plan: null })} title={remaining < 1 ? 'No unused questions left' : undefined}><Play size={14}/>One more round</button>}
         </header>
 
         {(error || market?.error) && <div className="notice" role="alert">{error || market.error}</div>}
@@ -147,7 +142,7 @@ export default function ClassroomPage() {
               <summary>Live chart<ChevronDown size={16} aria-hidden="true"/></summary>
               <ProgressChart agents={inClass} countItems={countItems} height={240}/>
             </details>
-            <ReportCard rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>
+            <ReportCard rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems} plan={market?.dataset?.benchmark_plan} demo={market?.mode === 'demo'}/>
           </div>}
         </div>
       </main>

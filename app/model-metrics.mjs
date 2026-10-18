@@ -54,7 +54,7 @@ export function cumulativeSeries(workers, aspect, countItems = false) {
   return batches.map((batch, i) => {
     const sliced = workers.map(w => ({ ...w, scores: (w.scores || []).slice(0, i + 1) }));
     const rows = withAspects(modelMetrics(sliced, null, countItems));
-    return { label: `Quiz ${batch.round} · ${batch.stage === 'reveal' ? 'B' : 'A'}`, ...Object.fromEntries(rows.map(w => [w.id, w[aspect]])) };
+    return { label: `Round ${batch.round} · ${batch.stage === 'reveal' ? 'B' : 'A'}`, ...Object.fromEntries(rows.map(w => [w.id, w[aspect]])) };
   });
 }
 

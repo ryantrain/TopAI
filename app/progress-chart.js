@@ -20,7 +20,7 @@ const endLabel = (name, last) => function EndLabel({ x, y, index }) {
   return index === last ? <text x={x + 9} y={y} dy={4} fontSize={11} fill="#4a4a52">{name}</text> : null;
 };
 
-// Running totals per aspect, one point per marked part of a quiz.
+// Running totals per aspect, one point per marked part of a round.
 export default function ProgressChart({ agents, countItems, live, height = 300 }) {
   const [aspect, setAspect] = useState('accuracy');
   const rows = cumulativeSeries(agents, aspect, countItems);
@@ -44,9 +44,9 @@ export default function ProgressChart({ agents, countItems, live, height = 300 }
               <Tooltip content={<ChartTooltip aspect={aspect}/>} cursor={{ stroke: '#d6d3cc', strokeDasharray: '3 3' }}/>
               {agents.map(w => <Line key={w.id} type="monotone" dataKey={w.id} name={w.name} stroke={w.color} strokeWidth={2} dot={{ r: 4, strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} label={endLabel(w.name, rows.length - 1)} connectNulls isAnimationActive={false}/>)}
             </LineChart></ResponsiveContainer>
-          : <div className="chart-empty">{rows.length ? `No ${info.label.toLowerCase()} data for these runs.${aspect === 'cost' ? ' Set WORKER_COST_PER_1K_TOKENS to estimate cost.' : ''}` : 'The first points appear when Part A of quiz 1 is marked.'}</div>}
+          : <div className="chart-empty">{rows.length ? `No ${info.label.toLowerCase()} data for these runs.${aspect === 'cost' ? ' Set WORKER_COST_PER_1K_TOKENS to estimate cost.' : ''}` : 'The first points appear when Part A of round 1 is marked.'}</div>}
       </div>
-      <p className="fine-print">Running totals. A = first 10 questions of a quiz, B = 10 new questions. Results apply to this worksheet only.</p>
+      <p className="fine-print">Running totals. A = first 10 questions of a round, B = 10 new questions. Results apply to this worksheet only.</p>
     </section>
   </div>;
 }

@@ -22,12 +22,16 @@ export function Recommendation({ pick, minimum, setMinimum, demo }) {
   </section>;
 }
 
-export default function ReportCard({ rows, winner, onSelect, countItems }) {
+export default function ReportCard({ rows, winner, onSelect, countItems, plan, demo }) {
+  const judged = plan?.method === 'rubric';
   return <details className="drawer result-table" open>
     <summary>Final results<ChevronDown size={16} aria-hidden="true"/></summary>
-    <p className="section-note">Totals across every quiz. Select an agent to see their marked answers.</p>
+    <p className="section-note">Totals across every round. Select an agent to see their marked answers.</p>
+    {judged && <p className="judge-note">{demo
+      ? 'Practice run: the judge was not called, so answers were compared with the answer key.'
+      : `Marked by the ${plan.judge_model || 'local'} judge against your rubric. An answer counts as correct at ${plan.pass_score}/100 or above. Judge scores are estimates; check them in each agent's answers.`}</p>}
     <div className="table-wrap"><table>
-      <thead><tr><th>Agent</th><th>Grade</th><th className="num">Overall</th><th className="num">Accuracy</th><th className="num">{countItems ? 'Items / 1k tok' : 'Correct / 1k tok'}</th><th className="num">Time / q</th><th className="num">Est. cost</th></tr></thead>
+      <thead><tr><th>Agent</th><th>Grade</th><th className="num">Overall</th><th className="num">{judged ? 'Pass rate' : 'Accuracy'}</th><th className="num">{countItems ? 'Items / 1k tok' : 'Correct / 1k tok'}</th><th className="num">Time / q</th><th className="num">Est. cost</th></tr></thead>
       <tbody>{rows.map(w => <tr key={w.id} className={winner === w.id ? 'top' : ''}>
         <td><button type="button" className="agent-cell" onClick={() => onSelect(w.id)}><i style={{ background: w.color }}/><span><strong>{w.name}</strong><small>{w.provider && w.provider !== 'simulated' ? w.model : 'simulated'}</small></span></button></td>
         <td><span className="grade">{letterGrade(w.accuracy)}</span></td>

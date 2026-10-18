@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Database, LayoutGrid } from 'lucide-react';
+import { FileText, LayoutGrid } from 'lucide-react';
 
-const PAGES = [['/', 'Classroom', LayoutGrid], ['/datasets', 'Datasets', Database]];
+const PAGES = [['/', 'Classroom', LayoutGrid], ['/worksheets', 'Worksheets', FileText]];
 
 // Shared dashboard sidebar; each page adds its own details below the navigation.
 export default function Sidebar({ children }) {

@@ -9,7 +9,7 @@ import { fetchWorksheet, removeWorksheet, selectWorksheets, uploadWorksheets } f
 const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.docx,.pptx,.xlsx,.csv,.json,.jsonl,.txt,.md';
 const date = iso => { try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return ''; } };
 
-export default function DatasetsPage() {
+export default function WorksheetsPage() {
   const [market, setMarket] = useState(null);
   const [error, setError] = useState('');
   const [uploads, setUploads] = useState([]);
@@ -58,7 +58,7 @@ export default function DatasetsPage() {
     finally { setPending(''); }
   }
   const toggle = id => act(id, () => selectWorksheets(selection.includes(id) ? selection.filter(i => i !== id) : [...selection, id]));
-  const remove = file => { if (window.confirm(`Remove ${file.name}? It will be deleted from your datasets.`)) act(file.id, () => removeWorksheet(file.id)); };
+  const remove = file => { if (window.confirm(`Remove ${file.name}? It will be deleted from your worksheets.`)) act(file.id, () => removeWorksheet(file.id)); };
   async function open(file) {
     setPreview({ file, rows: null });
     try { const data = await fetchWorksheet(file.id); setPreview({ file, rows: data.examples || [], instructions: data.instructions }); }
@@ -66,19 +66,14 @@ export default function DatasetsPage() {
   }
 
   return <div className="shell">
-    <Sidebar>
-      <dl className="session">
-        <div><dt>Datasets saved</dt><dd>{files.length}</dd></div>
-        <div><dt>Used in next class</dt><dd>{selection.length ? `${selection.length} · ${count} questions` : 'Sample questions'}</dd></div>
-      </dl>
-    </Sidebar>
+    <Sidebar/>
     <div className="workspace">
-      <main className="stage datasets">
+      <main className="stage worksheets">
         <header className="page-head">
           <div>
-            <p className="eyebrow">Datasets</p>
-            <h1>Turn your material into a dataset</h1>
-            <p>Upload worksheets, past papers or notes. Each file becomes a set of questions with answers that your agents can be tested on. Tick the datasets to use, then go to the classroom.</p>
+            <p className="eyebrow">Worksheets</p>
+            <h1>Turn your material into worksheets</h1>
+            <p>Upload worksheets, past papers or notes. Each file becomes a set of questions with answers that your agents can be tested on. Tick the worksheets to use, then go to the classroom.</p>
           </div>
           <Link className="quiet-button" href="/">Go to classroom<ArrowRight size={14}/></Link>
         </header>
@@ -103,20 +98,20 @@ export default function DatasetsPage() {
           {!uploading && <li className="upload-done"><button type="button" className="link-button" onClick={() => setUploads([])}>Clear</button></li>}
         </ul>}
 
-        <section className="dataset-list" aria-labelledby="saved-title">
+        <section className="worksheet-list" aria-labelledby="saved-title">
           <div className="section-row">
-            <div><h2 id="saved-title">Your datasets</h2>
-              <p>{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'quiz' : 'quizzes'} available${count < 20 ? ` · add ${20 - count} more questions to run` : ''}` : 'None selected: the classroom uses built-in sample questions.'}</p></div>
+            <div><h2 id="saved-title">Your worksheets</h2>
+              <p>{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'round' : 'rounds'} available${count < 20 ? ` · add ${20 - count} more questions to run` : ''}` : 'None selected yet: tick at least one worksheet to start a class.'}</p></div>
             {selection.length > 0 && !locked && <button type="button" className="link-button" onClick={() => act('all', () => selectWorksheets([]))}>Clear selection</button>}
           </div>
           {locked && <p className="muted">A class is in progress or has results, so the selection is fixed. Start a new class in the classroom to change it. You can still upload and preview.</p>}
           {!files.length
-            ? <div className="empty-state">No datasets yet. Upload a file above to create your first one.</div>
+            ? <div className="empty-state">No worksheets yet. Upload a file above to create your first one.</div>
             : <div className="table-wrap"><table>
-              <thead><tr><th>Use</th><th>Dataset</th><th className="num">Questions</th><th>Answers</th><th>Added</th><th className="num">Actions</th></tr></thead>
+              <thead><tr><th>Use</th><th>Worksheet</th><th className="num">Questions</th><th>Answers</th><th>Added</th><th className="num">Actions</th></tr></thead>
               <tbody>{files.map(f => <tr key={f.id} className={selection.includes(f.id) ? 'top' : ''}>
                 <td><input type="checkbox" aria-label={`Use ${f.name} in the next class`} checked={selection.includes(f.id)} disabled={locked || !!pending} onChange={() => toggle(f.id)}/></td>
-                <td><div className="dataset-name"><strong>{f.name}</strong><small>{f.source !== f.name ? `${f.source} · ` : ''}{f.origin === 'converted' ? 'Read by AI' : 'Imported'}</small></div></td>
+                <td><div className="worksheet-name"><strong>{f.name}</strong><small>{f.source !== f.name ? `${f.source} · ` : ''}{f.origin === 'converted' ? 'Read by AI' : 'Imported'}</small></div></td>
                 <td className="num">{f.count}</td>
                 <td>{f.scoring === 'numeric' ? 'Numbers' : 'Text'}{f.model_answers > 0 && <span className="flag" title="These answers were not in the file and were worked out by AI. Check them before relying on results."><AlertTriangle size={12}/>{f.model_answers} to check</span>}</td>
                 <td>{date(f.created_at)}</td>
@@ -127,7 +122,7 @@ export default function DatasetsPage() {
                 </div></td>
               </tr>)}</tbody>
             </table></div>}
-          <p className="fine-print">Each quiz uses 20 questions: 10 in Part A and 10 new ones in Part B. Ticking several datasets merges them into one question set. Only upload material you have permission to use; files that need reading are sent to Gemini.</p>
+          <p className="fine-print">Each round uses 20 questions: 10 in Part A and 10 new ones in Part B. Ticking several worksheets merges them into one question set. Only upload material you have permission to use; files that need reading are sent to Gemini.</p>
         </section>
       </main>
     </div>
