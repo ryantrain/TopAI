@@ -2,18 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { modelMetrics, metricLeaders, fastestQualified, withAspects, cumulativeSeries, recommend, letterGrade } from './model-metrics.mjs';
 const worker = (name, correct, tokens, seconds) => ({ name, scores: [{ round: 1, stage: 'quiz', correct, total_tokens: tokens, elapsed_seconds: seconds, attempted: 10 }] });
-test('item efficiency and overall use actual item counts with matched coverage', () => {
-  const a = worker('More ideas', 8, 1000, 10), b = worker('Fewer ideas', 10, 1000, 10);
-  a.scores[0].output_count = 40;
-  b.scores[0].output_count = 20;
-  const rows = modelMetrics([a, b], null, true);
-  assert.equal(rows[0].efficiency, 40);
-  assert.equal(rows[1].efficiency, 20);
-  assert.equal(metricLeaders(rows, 'overall')[0].name, 'More ideas');
-  assert.equal(modelMetrics([a, b])[0].efficiency, 8);
-  b.scores[0].output_count = null;
-  assert.equal(modelMetrics([a, b], null, true)[0].efficiency, null);
-});
 test('different category winners and correctness-adjusted overall', () => {
   const rows = modelMetrics([worker('Efficient', 8, 100, 10), worker('Fast', 10, 200, 5), worker('Wrong', 0, 10, 1)]);
   assert.equal(metricLeaders(rows, 'efficiency')[0].name, 'Efficient');

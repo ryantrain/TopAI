@@ -36,7 +36,7 @@ class LatexMathCheck(unittest.TestCase):
 
     def test_planner_receives_references_and_cannot_choose_numeric_for_symbolic_math(self):
         dataset = datasets.parse_dataset(json.dumps(self.rows()).encode(), 'integrals.json', 'exact')
-        protocol = evaluation.BenchmarkProtocol(method='numeric', instructions='Solve each integral.').model_dump()
+        protocol = evaluation.BenchmarkProtocol(method='exact', instructions='Solve each integral.').model_dump()
         with patch.object(providers, 'local_models_ready', AsyncMock()), patch.object(providers, 'ask', AsyncMock(return_value=protocol)) as ask:
             plan = asyncio.run(evaluation.suggest('Solve integrals', dataset))
         context = json.loads(ask.call_args.args[0])

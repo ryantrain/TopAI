@@ -22,12 +22,12 @@ export function Recommendation({ pick, minimum, setMinimum }) {
   </section>;
 }
 
-export default function ReportCard({ rows, winner, onSelect, countItems, taskMetric }) {
+export default function ReportCard({ rows, winner, onSelect, taskMetric }) {
   return <details className="drawer result-table" open>
     <summary>Final results<ChevronDown size={16} aria-hidden="true"/></summary>
     <p className="section-note">Totals across every quiz. Select an agent to see their marked answers.</p>
     <div className="table-wrap"><table>
-      <thead><tr><th>Agent</th><th>Grade</th><th className="num">Overall</th><th className="num">Accuracy</th><th className="num">{countItems ? 'Items / 1k tok' : 'Correct / 1k tok'}</th><th className="num">Time / q</th><th className="num">Est. cost</th>{taskMetric && <th className="num" title={taskMetric.instruction}>Avg. {taskMetric.name} ({taskMetric.unit})</th>}</tr></thead>
+      <thead><tr><th>Agent</th><th>Grade</th><th className="num">Overall</th><th className="num">Accuracy</th><th className="num">Correct / 1k tok</th><th className="num">Time / q</th><th className="num">Est. cost</th>{taskMetric && <th className="num" title={taskMetric.instruction}>Avg. {taskMetric.name} ({taskMetric.unit})</th>}</tr></thead>
       <tbody>{rows.map(w => <tr key={w.id} className={winner === w.id ? 'top' : ''}>
         <td><button type="button" className="agent-cell" onClick={() => onSelect(w.id)}><i style={{ background: w.color }}/><span><strong>{w.name}</strong><small>{w.provider === 'simulated' ? 'simulated demo agent' : [w.provider, w.model].filter(Boolean).join(' · ')}</small></span></button></td>
         <td><span className="grade">{letterGrade(w.accuracy)}</span></td>
@@ -39,6 +39,6 @@ export default function ReportCard({ rows, winner, onSelect, countItems, taskMet
         {taskMetric && <td className="num">{show(w.taskMetric, v => v.toFixed(2))}</td>}
       </tr>)}</tbody>
     </table></div>
-    <p className="fine-print">Grade from accuracy: A ≥ 90%, B ≥ 80%, C ≥ 70%, D ≥ 60%. Overall (0–100) combines correct answers per token and per second, relative to the best agent. Cost uses your configured token prices.</p>
+    <p className="fine-print">Grade from accuracy: A ≥ 90%, B ≥ 80%, C ≥ 70%, D ≥ 60%. Overall (0–100) combines correct answers per token and per second, relative to the best agent. Cost prices each agent\u2019s input and output tokens at its model\u2019s published rate; an agent on a model with no listed price shows \u2014, and simulated agents cost nothing.</p>
   </details>;
 }

@@ -1,12 +1,12 @@
 // Compare only matched batches with usage metadata for every worker.
-export function modelMetrics(workers, round = null, countItems = false) {
+export function modelMetrics(workers, round = null) {
   const histories = workers.map(w => (w.scores || []).filter(s => round === null || s.round === round));
-  const keys = histories[0]?.filter(s => histories.every(h => h.some(t => t.round === s.round && t.stage === s.stage && t.total_tokens > 0 && t.elapsed_seconds > 0 && t.attempted > 0 && (!countItems || (Number.isFinite(t.output_count) && t.output_count >= 0))))).map(s => `${s.round}:${s.stage}`) || [];
+  const keys = histories[0]?.filter(s => histories.every(h => h.some(t => t.round === s.round && t.stage === s.stage && t.total_tokens > 0 && t.elapsed_seconds > 0 && t.attempted > 0))).map(s => `${s.round}:${s.stage}`) || [];
   const rows = workers.map((w, i) => {
     const samples = histories[i].filter(s => keys.includes(`${s.round}:${s.stage}`));
     const sum = key => samples.reduce((total, s) => total + s[key], 0);
     const correct = sum('correct'), tokens = sum('total_tokens'), seconds = sum('elapsed_seconds'), attempted = sum('attempted');
-    const outputCount = countItems ? sum('output_count') : correct;
+    const outputCount = correct;
     const priced = samples.length > 0 && samples.every(s => Number.isFinite(s.estimated_cost_usd) && s.estimated_cost_usd >= 0);
     const costPer1k = priced && tokens ? sum('estimated_cost_usd') * 1000 / tokens : null;
     return { ...w, costPer1k, attempted, correct, outputCount, tokens, seconds, efficiency: tokens ? outputCount * 1000 / tokens : null, speed: attempted ? seconds / attempted : null, throughput: seconds ? outputCount / seconds : 0 };
@@ -31,7 +31,7 @@ export const ASPECTS = {
   accuracy: { label: 'Accuracy', unit: '%', better: 'higher', hint: 'Share of answers marked correct.' },
   efficiency: { label: 'Efficiency', unit: 'correct / 1k tokens', better: 'higher', hint: 'Correct answers per 1,000 tokens used.' },
   speed: { label: 'Speed', unit: 's / question', better: 'lower', hint: 'Average seconds spent per question.' },
-  cost: { label: 'Cost', unit: 'USD', better: 'lower', hint: 'Estimated spend so far, from configured token prices.' },
+  cost: { label: 'Cost', unit: 'USD', better: 'lower', hint: 'Spend so far, priced from each model\u2019s published rate for the tokens it used.' },
   overall: { label: 'Overall', unit: '/ 100', better: 'higher', hint: 'Efficiency and throughput combined, relative to the best student.' },
 };
 
@@ -52,11 +52,11 @@ export function withAspects(rows) {
 }
 
 // One point per finished batch; each point is the running total up to that batch.
-export function cumulativeSeries(workers, aspect, countItems = false) {
+export function cumulativeSeries(workers, aspect) {
   const batches = workers[0]?.scores || [];
   return batches.map((batch, i) => {
     const sliced = workers.map(w => ({ ...w, scores: (w.scores || []).slice(0, i + 1) }));
-    const rows = withAspects(modelMetrics(sliced, null, countItems));
+    const rows = withAspects(modelMetrics(sliced));
     return { label: `Quiz ${batch.round}`, ...Object.fromEntries(rows.map(w => [w.id, w[aspect]])) };
   });
 }

@@ -99,12 +99,12 @@ const endLabel = (name, last) => function EndLabel({ x, y, index }) {
 };
 
 // Running totals per aspect, one point per completed quiz, drawn in as each quiz finishes.
-export default function ProgressChart({ agents, countItems, live, height = 300 }) {
+export default function ProgressChart({ agents, live, height = 300 }) {
   const [aspect, setAspect] = useState('accuracy');
   const box = useRef(null);
   // Recompute the series only when a quiz finishes, not on every animation frame or poll.
   const signature = agents.map(w => `${w.id}:${w.scores?.length || 0}`).join('|');
-  const rows = useMemo(() => cumulativeSeries(agents, aspect, countItems), [signature, aspect, countItems]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => cumulativeSeries(agents, aspect), [signature, aspect]); // eslint-disable-line react-hooks/exhaustive-deps
   const ids = agents.map(w => w.id);
   const values = rows.flatMap(r => ids.map(id => r[id])).filter(v => Number.isFinite(v));
   const hasData = values.length > 0;
@@ -137,7 +137,7 @@ export default function ProgressChart({ agents, countItems, live, height = 300 }
               {agents.map(w => <Line key={w.id} type="linear" dataKey={w.id} name={w.name} stroke={w.color} strokeWidth={2.25} strokeLinejoin="round" strokeLinecap="round"
                 dot={dot(w.color, shown.length - 1, drawing)} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} label={endLabel(w.name, shown.length - 1)} connectNulls isAnimationActive={false}/>)}
             </LineChart></ResponsiveContainer>
-          : <div className="chart-empty">{rows.length ? `No ${info.label.toLowerCase()} data for these runs.${aspect === 'cost' ? ' Set WORKER_COST_PER_1K_TOKENS to estimate cost.' : ''}` : 'The first points appear when quiz 1 is marked.'}</div>}
+          : <div className="chart-empty">{rows.length ? `No ${info.label.toLowerCase()} data for these runs.${aspect === 'cost' ? ' Simulated agents cost nothing, and quizzes run before an agent had a listed price stay blank.' : ''}` : 'The first points appear when quiz 1 is marked.'}</div>}
       </div>
       <p className="fine-print">Running totals across completed quizzes. Results apply to this worksheet only.</p>
     </section>

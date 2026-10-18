@@ -92,10 +92,9 @@ export default function ClassroomPage() {
   // Only switched-on agents are included in the run request and comparison.
   const inClass = agents.filter(a => a.active);
   const classroom = agents;
-  const countItems = session?.dataset?.benchmark_plan?.method === 'items';
   useEffect(() => { window.scrollTo({ top: 0 }); }, [step]);
 
-  const rows = withAspects(modelMetrics(inClass, null, countItems));
+  const rows = withAspects(modelMetrics(inClass));
   const pick = recommend(rows, minimum);
   const liveRun = step === 0 ? agentMode === 'live' : session?.mode === 'live';
   const config = session?.configuration || session?.integrations?.configuration;
@@ -120,12 +119,16 @@ export default function ClassroomPage() {
 
   return <div className="shell">
     <Sidebar>
-      <dl className="session">
-        <div><dt>Worksheet</dt><dd>{session?.dataset ? `${session.dataset.name} · ${session.dataset.count} q` : 'None selected'}</dd></div>
-        <div><dt>Run</dt><dd>{step === 0 ? agentMode === 'live' ? `${agents.length} API agents ready` : agentMode === 'demo' ? '3 demo agents' : 'Choose agents' : liveRun ? 'API agents' : 'Demo agents'}</dd></div>
-        <div><dt>Judge</dt><dd>{judgeLabel}</dd></div>
-        <div><dt>Quizzes done</dt><dd>{session?.round || 0}</dd></div>
-      </dl>
+      {/* Closed by default: the details are reference, not something to watch while teaching. */}
+      <details className="session-details">
+        <summary>Session details</summary>
+        <dl className="session">
+          <div><dt>Worksheet</dt><dd>{session?.dataset ? `${session.dataset.name} · ${session.dataset.count} q` : 'None selected'}</dd></div>
+          <div><dt>Run</dt><dd>{step === 0 ? agentMode === 'live' ? `${agents.length} API agents ready` : agentMode === 'demo' ? '3 demo agents' : 'Choose agents' : liveRun ? 'API agents' : 'Demo agents'}</dd></div>
+          <div><dt>Judge</dt><dd>{judgeLabel}</dd></div>
+          <div><dt>Quizzes done</dt><dd>{session?.round || 0}</dd></div>
+        </dl>
+      </details>
       <button type="button" className="sidebar-button" onClick={newClass} disabled={!session || session.running || busy}><RotateCcw size={14}/>New class</button>
     </Sidebar>
 
@@ -155,13 +158,13 @@ export default function ClassroomPage() {
               onToggle={step === 0 ? toggle : null} onOpen={step > 0 ? setSelected : null} compact={step > 0}/>
             {step === 2 && <Recommendation pick={pick} minimum={minimum} setMinimum={setMinimum}/>}
           </div>
-          {step === 1 && <div className="stage-right"><ProgressChart agents={inClass} countItems={countItems} live/></div>}
+          {step === 1 && <div className="stage-right"><ProgressChart agents={inClass} live/></div>}
           {step === 2 && <div className="stage-right">
             <details className="drawer chart-drawer" open>
               <summary>Chart<ChevronDown size={16} aria-hidden="true"/></summary>
-              <ProgressChart agents={inClass} countItems={countItems} height={240}/>
+              <ProgressChart agents={inClass} height={240}/>
             </details>
-            <ReportCard taskMetric={session?.dataset?.benchmark_plan?.task_metric} rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>
+            <ReportCard taskMetric={session?.dataset?.benchmark_plan?.task_metric} rows={rows} winner={pick?.worker.id} onSelect={setSelected}/>
           </div>}
         </div>}
       </main>

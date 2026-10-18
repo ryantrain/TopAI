@@ -7,14 +7,16 @@ import { readApiResponse } from './api-response.mjs';
 import { uploadWorksheets } from './library-api.mjs';
 
 
+// Two ways to mark. Named for what the teacher gets, not for how it is implemented.
 export const METHODS = {
-  exact: 'Exact match',
-  numeric: 'Number within tolerance',
-  json: 'Structured JSON',
-  rubric: 'AI rubric judge',
-  items: 'Count distinct items',
+  exact: 'Right answer only',
+  rubric: 'Graded on quality',
 };
-const BLANK_PLAN = { goal: '', method: 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: 0.000001, pass_score: 80, repetitions: 1 };
+export const METHOD_HINTS = {
+  exact: 'Marks an answer correct when it matches your answer key. Wording, units and formatting may differ.',
+  rubric: 'An AI judge scores each answer against your rubric, for work with no single right answer.',
+};
+const BLANK_PLAN = { goal: '', method: 'exact', instructions: '', rubric: '', tolerance: 0.000001, pass_score: 80, repetitions: 1 };
 
 // Chat-style task box: describe the task, attach a worksheet with +, start with the arrow.
 export default function Composer({ session, step, busy, refresh, onStart, onNewTask, onError }) {
@@ -42,7 +44,7 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
   useEffect(() => { const saved = JSON.parse(savedPlan); if (saved) setPlan(p => ({ ...BLANK_PLAN, ...saved, goal: p.goal.trim() ? p.goal : saved.goal })); }, [savedPlan]);
   // Until a plan is drafted or saved, follow the worksheet's own answer type.
   useEffect(() => {
-    if (dataset?.scoring && !dataset.benchmark_plan && !drafted) setPlan(p => ({ ...p, method: dataset.scoring, tolerance: dataset.tolerance ?? p.tolerance }));
+    if (dataset?.scoring && !dataset.benchmark_plan && !drafted) setPlan(p => ({ ...p, method: METHODS[dataset.scoring] ? dataset.scoring : 'exact', tolerance: dataset.tolerance ?? p.tolerance }));
   }, [dataset?.digest, dataset?.scoring, dataset?.tolerance, dataset?.benchmark_plan, drafted]);
   useEffect(() => { setDrafted(false); }, [dataset?.digest]);
   useEffect(() => { if (maxRounds > 0 && rounds > maxRounds) setRounds(maxRounds); }, [maxRounds, rounds]);
@@ -113,12 +115,11 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
       {drafted && <p className="muted">Ollama built these metrics from your request. Review them, then press Confirm to start.</p>}
       {plan.unsupported_requirements?.length > 0 && <div className="unsupported"><strong>Not measured by this setup</strong><ul>{plan.unsupported_requirements.map(r => <li key={r}>{r}</li>)}</ul></div>}
       <div className="details-grid">
-        <label>Evaluate using<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-        {plan.method === 'numeric' && <label>Allowed error<input type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))}/></label>}
+        <label>How answers are marked<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select><small>{METHOD_HINTS[plan.method]}</small></label>
+        <label>Allowed error on numbers<input type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))}/><small>Used when the answers are numbers, in either marking mode.</small></label>
         <label>Instructions every agent gets<textarea rows={3} maxLength={8000} value={plan.instructions} onChange={e => change('instructions', e.target.value)} placeholder="Answer format and requirements. Never include the answer key."/></label>
         {plan.method === 'rubric' && <label>Rubric for the judge<textarea rows={3} maxLength={8000} value={plan.rubric} onChange={e => change('rubric', e.target.value)} placeholder="What a passing answer includes."/></label>}
         {plan.method === 'rubric' && <label>Passing score / 100<input type="number" min="1" max="100" value={plan.pass_score} onChange={e => change('pass_score', e.target.value === '' ? '' : Number(e.target.value))}/></label>}
-        {plan.method === 'items' && <label>What to count<input maxLength={40} value={plan.output_unit} onChange={e => change('output_unit', e.target.value)}/></label>}
       </div>
       {drafted && <div className="details-actions">
         <span className="muted">Starts {rounds} {rounds === 1 ? 'quiz' : 'quizzes'} with these settings.</span>
@@ -129,8 +130,8 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
     {step === 0 && <div className="composer-options">
       <BenchmarkPicker session={session} disabled={busy || !!uploading} refresh={refresh} onError={onError}/>
       {uploading && <span className="chip"><Loader2 size={13} className="spin"/>Reading…</span>}
-      <label className="chip">Marking<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-      {plan.method === 'numeric' && <label className="chip">±<input className="tolerance" type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))} aria-label="Allowed error"/></label>}
+      <label className="chip" title={METHOD_HINTS[plan.method]}>Marking<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+      <label className="chip">±<input className="tolerance" type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))} aria-label="Allowed error on numbers"/></label>
       <span className="chip" title="The app uses configured API agents when their keys are ready, then falls back to simulated agents">{runLabel} · {judge}</span>
       <label className="chip" title="Ask each agent every question this many times to check consistency">Repeats<select value={plan.repetitions ?? 1} onChange={e => change('repetitions', Number(e.target.value))}>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}×</option>)}</select></label>
       <label className="chip">Quizzes<select value={rounds} onChange={e => setRounds(Number(e.target.value))}>{Array.from({ length: Math.max(1, Math.min(10, maxRounds)) }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}</select></label>

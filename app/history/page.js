@@ -104,7 +104,7 @@ export default function HistoryPage({ savedSessionId, savedRound }) {
           {snapshot.dataset?.benchmark_plan?.goal && <div className="history-task"><h3>Task</h3><p>{snapshot.dataset.benchmark_plan.goal}</p></div>}
           <details className="history-reference"><summary>Session reference</summary><code>{snapshot.session_id}</code></details>
         </div>
-        <ReportCard rows={rows} countItems={snapshot.dataset?.benchmark_plan?.method === 'items'} onSelect={id => setWorker(savedWorkers.find(w => w.id === id))}/>
+        <ReportCard rows={rows} onSelect={id => setWorker(savedWorkers.find(w => w.id === id))}/>
       </section>}
     </main></div>
     {worker && <WorksheetModal worker={worker} onClose={closeSheet}/>}

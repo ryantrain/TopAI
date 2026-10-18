@@ -67,18 +67,20 @@ class DatasetCheck(unittest.TestCase):
         self.assertFalse(datasets.matches(6, 8, 'numeric', dataset['tolerance']))
         state = exchange.initial_state()
         state.update(round=1, mode='live', dataset=dataset)
-        config = exchange.providers.configuration()
-        config['cost_per_1k_tokens'] = [0.01, None, 0]
-        state['configuration'] = config
-        mock = AsyncMock(return_value=dict(answers=[7] * 10, _total_tokens=100))
+        state['configuration'] = exchange.providers.configuration()
+        # The provider reports what the call cost; an unpriced model reports nothing.
+        costs = [0.0004, None, 0.0]
+        calls = iter(costs * 10)
+        async def answer(*args, **kwargs):
+            return dict(answers=[7] * 10, _total_tokens=100, _cost_usd=next(calls))
+        mock = AsyncMock(side_effect=answer)
         with patch.object(exchange, 'ask', mock):
             asyncio.run(exchange.benchmark(state))
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
         self.assertIn(envelope['instructions'], mock.call_args_list[0].args[1])
         self.assertEqual(json.loads(mock.call_args_list[0].args[0]), [f'Paper {i}' for i in range(10)])
-        self.assertEqual(state['workers'][0]['scores'][0]['estimated_cost_usd'], 0.001)
-        self.assertIsNone(state['workers'][1]['scores'][0]['estimated_cost_usd'])
-        self.assertEqual(state['workers'][2]['scores'][0]['estimated_cost_usd'], 0)
+        recorded = [w['scores'][0]['estimated_cost_usd'] for w in state['workers'][:3]]
+        self.assertEqual(recorded, costs)
         for tolerance in [-1, True, '1', float('inf')]:
             envelope['tolerance'] = tolerance
             with self.assertRaises(ValueError):

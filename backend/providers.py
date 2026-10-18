@@ -9,6 +9,29 @@ import httpx
 
 KEYS = {'openai': 'OPENAI_API_KEY', 'gemini': 'GEMINI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'ollama': None}
 DEFAULT_MODELS = {'openai': 'gpt-4o-mini', 'gemini': 'gemini-2.5-flash-lite', 'anthropic': 'claude-haiku-5-5', 'ollama': 'qwen2.5:7b'}
+# Published list prices in USD per 1,000,000 tokens, as (input, output). An unlisted model
+# reports no cost rather than a guessed one; a local model is free to run.
+# shortcut: list prices only, so cached or batch discounts are not reflected; refresh when providers change pricing.
+MODEL_PRICES = {
+    'gpt-4o-mini': (0.15, 0.60),
+    'claude-haiku-5-5': (0.10, 0.50),
+    'claude-sonnet-4-6': (3.00, 15.00),
+    'gemini-2.5-flash-lite': (0.10, 0.40),
+}
+
+
+def price_for(provider, model):
+    if provider == 'ollama':
+        return (0.0, 0.0)
+    return MODEL_PRICES.get((model or '').strip())
+
+
+def estimate_cost(provider, model, input_tokens, output_tokens):
+    """USD for one call, or None when the model has no published price here."""
+    price = price_for(provider, model)
+    if price is None or input_tokens is None or output_tokens is None:
+        return None
+    return (input_tokens * price[0] + output_tokens * price[1]) / 1_000_000
 _runtime_configuration = None
 _runtime_keys = {}
 
@@ -76,6 +99,7 @@ def configure_agents(slots):
                 worker['credential_id'] = credential_id
         workers.append(worker)
     _runtime_keys = keys
+    # Price each slot from its model, so configured agents report cost without extra setup.
     _runtime_configuration = dict(cost_per_1k_tokens=[None] * len(workers), workers=workers)
     return configuration()
 
@@ -155,7 +179,11 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
             )
         result = parse_provider_object(response.output_text, provider, model)
         if with_usage:
-            result['_total_tokens'] = response.usage.total_tokens if response.usage else None
+            usage = response.usage
+            result['_total_tokens'] = usage.total_tokens if usage else None
+            result['_input_tokens'] = getattr(usage, 'input_tokens', None) if usage else None
+            result['_output_tokens'] = getattr(usage, 'output_tokens', None) if usage else None
+            result['_cost_usd'] = estimate_cost(provider, model, result['_input_tokens'], result['_output_tokens'])
         return result
 
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -173,7 +201,11 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
             )
             response.raise_for_status()
             data = response.json()
-            total_tokens = data.get('usageMetadata', {}).get('totalTokenCount')
+            meta = data.get('usageMetadata', {})
+            total_tokens = meta.get('totalTokenCount')
+            input_tokens = meta.get('promptTokenCount')
+            # Thinking tokens bill as output, so fold them in rather than under-reporting the cost.
+            output_tokens = (meta.get('candidatesTokenCount') or 0) + (meta.get('thoughtsTokenCount') or 0) or None
             candidates = data.get('candidates', [])
             if not candidates or candidates[0].get('finishReason') != 'STOP':
                 raise ValueError('Gemini did not return a complete answer')
@@ -189,12 +221,18 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
             data = response.json()
             usage = data.get('usage', {})
             total_tokens = sum(usage.get(k, 0) for k in ('input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens')) or None
+            # Cache writes and reads are billed differently; counting them as plain input keeps the estimate conservative.
+            input_tokens = sum(usage.get(k, 0) for k in ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens')) or None
+            output_tokens = usage.get('output_tokens')
             if data.get('stop_reason') != 'end_turn':
                 raise ValueError('Claude did not return a complete answer')
             raw = ''.join(p.get('text', '') for p in data.get('content', []) if p.get('type') == 'text')
     result = parse_provider_object(raw, provider, model)
     if with_usage:
         result['_total_tokens'] = total_tokens
+        result['_input_tokens'] = input_tokens
+        result['_output_tokens'] = output_tokens
+        result['_cost_usd'] = estimate_cost(provider, model, input_tokens, output_tokens)
     return result
 
 
@@ -226,5 +264,8 @@ async def ask_local(prompt, instruction, model, with_usage=False, schema=None):
     result = parse_provider_object(data['message']['content'], 'ollama', model)
     if with_usage:
         counts = [data.get('prompt_eval_count'), data.get('eval_count')]
-        result['_total_tokens'] = sum(counts) if all(type(c) is int and c >= 0 for c in counts) else None
+        valid = all(type(c) is int and c >= 0 for c in counts)
+        result['_total_tokens'] = sum(counts) if valid else None
+        result['_input_tokens'], result['_output_tokens'] = counts if valid else (None, None)
+        result['_cost_usd'] = 0.0
     return result

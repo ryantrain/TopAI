@@ -72,12 +72,8 @@ class EvaluationCheck(unittest.TestCase):
                                         r'gemini: TimeoutError, openai: ConnectionError, ollama: RuntimeError'):
                 asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['A'], plan))
 
-    def test_generated_items_count_and_saved_metadata(self):
-        plan = evaluation.BenchmarkPlan(goal='Generate ideas', method='items', output_unit='ideas').model_dump()
-        answers = [['Solar oven', ' solar   OVEN ', 'Rain barrel'], 'not json', [], [True], '["One", "Two"]']
-        grades = asyncio.run(evaluation.grade([dict(answer='reference')] * len(answers), answers, plan))
-        self.assertEqual([g['output_count'] for g in grades], [2, 0, 0, 0, 2])
-        self.assertEqual([g['correct'] for g in grades], [True, False, False, False, True])
+    def test_saved_plan_persists_and_drives_the_run(self):
+        plan = evaluation.BenchmarkPlan(goal='Grade short answers', method='rubric', rubric='Covers the key idea').model_dump()
         with TestClient(exchange.app) as client:
             saved = client.put('/api/benchmark', json=plan)
             self.assertEqual(saved.status_code, 200)
@@ -86,10 +82,12 @@ class EvaluationCheck(unittest.TestCase):
             self.assertEqual(exchange.restore()['dataset']['benchmark_plan'], saved.json())
         state = exchange.initial_state()
         state.update(round=1, mode='live', dataset=exchange.session['dataset'])
-        with patch.object(exchange, 'ask', AsyncMock(return_value=dict(answers=[['A', 'a', 'B']] * 10, _total_tokens=1000))) as ask:
+        judged = AsyncMock(return_value=dict(grades=[dict(id=i, correct=True, score=90, reason='ok') for i in range(10)]))
+        with patch.object(exchange, 'ask', AsyncMock(return_value=dict(answers=['an answer'] * 10, _total_tokens=1000))) as ask, \
+                patch.object(providers, 'ask', judged):
             asyncio.run(exchange.benchmark(state))
-        self.assertTrue(all(w['scores'][0]['output_count'] == 20 for w in state['workers']))
-        self.assertIn('JSON array of distinct', ask.call_args.args[1])
+        self.assertTrue(all(w['scores'][0]['attempted'] == 10 for w in state['workers']))
+        self.assertIn('scored against a rubric', ask.call_args.args[1])
 
     def setUp(self):
         self.previous = copy.deepcopy(exchange.session)
@@ -104,7 +102,7 @@ class EvaluationCheck(unittest.TestCase):
         exchange.session.update(self.previous)
 
     def test_evaluator_decides_verdicts_and_receives_criteria(self):
-        plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='numeric', tolerance=1,
+        plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='exact', tolerance=1,
                                         instructions='Return the mark', rubric='Reject invented marks').model_dump()
         verdicts = dict(grades=[dict(id=0, correct=True, score=95, reason='Within tolerance'),
                                 dict(id=1, correct=False, score=10, reason='Contradicts the reference')])
@@ -153,8 +151,9 @@ class EvaluationCheck(unittest.TestCase):
             body = dict(goal='Classify tickets', method='exact', instructions='Return a label')
             self.assertEqual(client.put('/api/benchmark', json=body).status_code, 200)
             self.assertEqual(exchange.restore()['dataset']['benchmark_plan']['goal'], body['goal'])
-            self.assertEqual(client.put('/api/benchmark', json={**body, 'method': 'numeric'}).status_code, 400)
-            self.assertEqual(client.put('/api/benchmark', json={**body, 'method': 'json'}).status_code, 400)
+            # Only exact and rubric exist now; anything else fails schema validation.
+            for retired in ('numeric', 'json', 'items'):
+                self.assertEqual(client.put('/api/benchmark', json={**body, 'method': retired}).status_code, 422)
             saved = client.put('/api/benchmark', json={**body, 'method': 'rubric'})
             self.assertEqual(saved.status_code, 200)
             self.assertEqual(saved.json()['evaluator'], dict(provider='ollama', model=providers.model_for('ollama')))
@@ -206,7 +205,7 @@ class EvaluationCheck(unittest.TestCase):
         dataset = exchange.session['dataset']
         for p in dataset['problems']:
             p['answer'] = '10'
-        plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='numeric', tolerance=1).model_dump()
+        plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='exact', tolerance=1).model_dump()
         dataset['benchmark_plan'] = plan
         state = exchange.session
         state.update(round=1, mode='live')
@@ -280,7 +279,7 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual(json.loads(ask.call_args.args[0])['paper_grading_template']['repetitions'], 3)
         self.assertEqual(json.loads(plan['execution_spec'])['selection'], 'shuffled')
         self.assertEqual(plan['goal'], goal)
-        self.assertEqual(plan['method'], 'numeric')
+        self.assertEqual(plan['method'], 'exact')
         self.assertEqual(plan['tolerance'], 1)
         self.assertIn('Grade each supplied paper', plan['instructions'])
         self.assertIsNone(evaluation.paper_grading_plan('Find a model for classifying support tickets'))
@@ -296,7 +295,7 @@ class EvaluationCheck(unittest.TestCase):
             with patch.object(providers, 'local_models_ready', AsyncMock()), patch.object(providers, 'ask', AsyncMock(return_value=draft)):
                 response = client.post('/api/benchmark/suggest', json=dict(goal='I want the best model for grading papers'))
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()['method'], 'numeric')
+            self.assertEqual(response.json()['method'], 'exact')
             self.assertIsNone(exchange.session['dataset'])
 
     def test_general_planner_uses_dataset_context_without_reference_keys(self):
@@ -316,7 +315,7 @@ class EvaluationCheck(unittest.TestCase):
         dataset = exchange.session['dataset']
         for p in dataset['problems']:
             p['answer'] = '10'
-        protocol = evaluation.BenchmarkProtocol(method='numeric', instructions='Grade each paper.',
+        protocol = evaluation.BenchmarkProtocol(method='exact', instructions='Grade each paper.',
             selection='shuffled', repetitions=3, tolerance=1).model_dump()
         # The execution string overrides conflicting legacy fields.
         body = dict(goal='Find a reliable grader', method='exact', repetitions=1,
@@ -324,7 +323,7 @@ class EvaluationCheck(unittest.TestCase):
         with TestClient(exchange.app) as client:
             response = client.put('/api/benchmark', json=body)
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()['method'], 'numeric')
+            self.assertEqual(response.json()['method'], 'exact')
             self.assertEqual(response.json()['repetitions'], 3)
             self.assertEqual(exchange.restore()['dataset']['benchmark_plan']['execution_spec'], response.json()['execution_spec'])
         state = exchange.session
@@ -380,7 +379,7 @@ class EvaluationCheck(unittest.TestCase):
         answers = [dict(answer=10, expected=10) for _ in range(20)]
         answers[10]['answer'] = 12
         answers[11]['answer'] = 'invalid'
-        metrics = evaluation.diagnostics(answers, dict(method='numeric', repetitions=2))
+        metrics = evaluation.diagnostics(answers, dict(method='exact', repetitions=2))
         self.assertEqual(metrics['repeat_agreement'], 80)
         self.assertEqual(metrics['numeric_valid_count'], 19)
         self.assertAlmostEqual(metrics['mean_absolute_error'], 2/19)

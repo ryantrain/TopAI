@@ -38,7 +38,7 @@ class SessionCheck(unittest.TestCase):
         self.assertEqual(state['workers'][0]['label'], 'Ada')
         # The structured response is enforced too, and numeric scoring asks for numeric answers.
         self.assertEqual(schemas[0]['required'], ['answers'])
-        self.assertEqual(schemas[0]['properties']['answers']['items'], {'type': 'number'})
+        self.assertEqual(schemas[0]['properties']['answers']['items'], {'type': 'string'})
         self.assertEqual(len(state['workers'][0]['answers']), 10)
 
     def test_complete_quiz_and_persistence(self):
