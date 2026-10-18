@@ -15,7 +15,7 @@ export const DEFAULT_ACTIVE = { circle: true, star: true, triangle: true, cloud:
 export function seatedAgents(workers, active) {
   return workers.map((w, i) => {
     const a = ROSTER[i] || ROSTER[0];
-    return { ...w, key: a.key, name: a.name, color: a.color, active: active[a.key] !== false };
+    return { ...w, key: a.key, name: w.label || a.name, color: a.color, active: active[a.key] !== false };
   });
 }
 

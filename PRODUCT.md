@@ -52,6 +52,7 @@ For symbolic integral answers, the default rubric asks the evaluator to recogniz
 - Plain-language benchmark requests.
 - Local Ollama benchmark-plan drafting.
 - Interactive setup for one to six API/local agents.
+- Distinct classroom characters with user-defined display names.
 - Explicit three-agent simulated demo option.
 - Gemini-first grading, then OpenAI, with local Ollama as the final fallback.
 - CSV, JSON, JSONL, PDF, image, Word, Excel, PowerPoint, and text worksheet intake.
@@ -80,7 +81,6 @@ The product succeeds when a student or teacher can describe an integral task, re
 ## Near-term direction
 
 1. Add a first-class integral dataset template and calibrated teacher examples.
-2. Let users name and describe configured agent slots.
-3. Add symbolic verification alongside AI evaluation for math tasks.
-4. Add criterion-level educational metrics and evaluator disagreement reporting.
-5. Validate recommendations against teacher judgments.
+2. Add symbolic verification alongside AI evaluation for math tasks.
+3. Add criterion-level educational metrics and evaluator disagreement reporting.
+4. Validate recommendations against teacher judgments.
