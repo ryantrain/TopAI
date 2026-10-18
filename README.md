@@ -1,6 +1,6 @@
-# Agent Exchange
+# Agent Classroom
 
-Agent Exchange helps students and teachers find the best AI model for a specific task using their own material. The reference use case is integral mathematics: describe the job, upload worksheets with trusted answers, and compare up to six agents on the same questions.
+Agent Classroom helps students and teachers find the best AI model for a specific task using their own material. The reference use case is integral mathematics: describe the job, upload worksheets with trusted answers, and compare up to six agents on the same questions.
 
 The benchmark engine is general enough for numeric answers, exact labels, structured JSON, generated-item counts, and rubric-judged responses.
 
@@ -20,10 +20,10 @@ Gemini evaluates each completed answer batch when GEMINI_API_KEY is set
    ↓
 Python stores verdicts and updates accuracy, speed, token, cost, and chart data
    ↓
-Repeat with 10 held-out questions, then recommend the best agent for this task
+Update the graph from judge scores; repeat on the next 10 questions if requested
 ```
 
-The uploaded dataset supplies the questions and reference answers. Reference answers never enter worker prompts. A round consumes 20 distinct examples: 10 public questions and 10 held-out questions.
+The uploaded dataset supplies the questions and reference answers. Reference answers never enter worker prompts. Every quiz gives the same 10 fresh questions to all selected agents.
 
 Item counting is deterministic Python. Other saved benchmark methods use the selected AI evaluator, so their verdicts are model assessments rather than formal proofs. Users can inspect each question, response, verdict, and reason.
 
@@ -69,12 +69,10 @@ WORKER_PROVIDERS=gemini,gemini,gemini
 WORKER_MODELS=gemini-3.8-flash,gemini-3.8-flash,gemini-3.8-flash
 WORKER_COST_PER_1K_TOKENS=,,
 
-TRADER_PROVIDER=gemini
-ANALYST_PROVIDER=gemini
 OLLAMA_MODEL=qwen2.5:7b
 ```
 
-At setup, the UI reports either **API agents ready** or **Demo fallback ready**. All keys required by the configured workers, trader, and analyst must be present for an API run. If configuration is invalid or a key is missing, the UI selects the seeded demo automatically.
+At setup, the UI reports either **API agents ready** or **Demo fallback ready**. All keys required by the configured workers must be present for an API run. If configuration is invalid or a key is missing, the UI selects the seeded demo automatically.
 
 Evaluation follows a separate priority:
 
@@ -85,7 +83,7 @@ Ollama always drafts benchmark plans. Structured CSV/JSON imports need no conver
 
 ## Use the integral benchmark
 
-1. Add or select worksheets totaling at least 20 questions.
+1. Add or select worksheets totaling at least 10 questions.
 2. Describe the task, such as `Find the best agent for first-year indefinite integrals.`
 3. Click **Suggest marking** and review the generated instructions and rubric.
 4. Choose the marking method and number of quizzes.
@@ -105,7 +103,7 @@ A structured dataset can be a CSV, JSON array, JSONL file, or JSON envelope:
 }
 ```
 
-Provide at least 20 distinct examples and 20 more for every additional round. Imports reject exact duplicate questions, but cannot detect paraphrased leakage or inaccurate answer keys.
+Provide at least 10 distinct examples and 10 more for every additional quiz. Imports reject exact duplicate questions, but cannot detect paraphrased leakage or inaccurate answer keys.
 
 ## Metrics
 
@@ -120,11 +118,9 @@ The dashboard reports:
 
 Demo timing and token counts are seeded simulation values. Evaluator latency and evaluator tokens are excluded from worker metrics. Results apply only to the uploaded data, prompt, criteria, evaluator, and model versions used in that run.
 
-## Storage and optional receipts
+## Storage
 
-SQLite is the default. Set `DATABASE_URL` to a TigerData/PostgreSQL connection string to store active state and completed-round archives remotely. Changing storage backends does not migrate existing history.
-
-After a completed round, a user may publish its hash through a Phantom-signed Solana Devnet memo. This optional receipt records evidence of the result; it does not run evaluation or transfer tokens.
+SQLite is the default. Set `DATABASE_URL` to a TigerData/PostgreSQL connection string to store active state and completed-quiz archives remotely. Changing storage backends does not migrate existing history.
 
 Uploaded worksheet source files remain in owner-only local storage. Cloud workers receive benchmark questions. Gemini evaluation receives questions, worker answers, references, and criteria. When Gemini is absent, Ollama evaluation stays on the local machine. Remove unnecessary personal information from student material before using cloud services.
 
@@ -132,20 +128,18 @@ Uploaded worksheet source files remain in owner-only local storage. Cloud worker
 
 Important routes:
 
-- `GET /api/market` — state plus detected agent/evaluator configuration
+- `GET /api/session` — state plus detected agent/evaluator configuration
 - `POST /api/benchmark/suggest` and `PUT /api/benchmark` — draft and save criteria
 - `POST /api/library/convert` and `PUT /api/library/selection` — import and select worksheets
-- `POST /api/rounds` — run 1–10 rounds
+- `POST /api/rounds` — run 1–10 quizzes
 - `POST /api/reset` — start a new session
-- `GET /api/history` — archived rounds
-- `GET /api/receipt` and `POST /api/receipt` — optional Solana receipt
+- `GET /api/history` — archived quizzes
 
 ```bash
-.venv/bin/python -m unittest backend.test_market backend.test_integrations backend.test_datasets backend.test_evaluation -v
+.venv/bin/python -m unittest backend.test_session backend.test_integrations backend.test_datasets backend.test_evaluation -v
 node app/api-response.test.mjs
 node app/model-metrics.test.mjs
-node app/receipt-transaction.test.mjs
 npm run build
 ```
 
-The automated suite mocks external providers, databases, wallets, and RPC calls. Real credentials and services require a separate integration run.
+The automated suite mocks external providers and databases. Real credentials and services require a separate integration run.

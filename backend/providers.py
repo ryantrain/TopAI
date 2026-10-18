@@ -1,4 +1,4 @@
-"""Small JSON-only adapters. Provider credentials never enter market state."""
+"""Small JSON-only adapters. Provider credentials never enter session state."""
 import json
 import math
 import os
@@ -25,17 +25,14 @@ def configuration():
             raise ValueError
     except ValueError:
         raise ValueError('WORKER_COST_PER_1K_TOKENS must contain one nonnegative USD rate or blank entry per worker') from None
-    trader = os.getenv('TRADER_PROVIDER', 'gemini').strip().lower()
-    analyst = os.getenv('ANALYST_PROVIDER', 'gemini').strip().lower()
-    if not 1 <= len(workers) <= 6 or any(not p or p not in KEYS for p in workers + [trader, analyst]):
-        raise ValueError('Choose one to six WORKER_PROVIDERS and supported trader/analyst providers: openai, gemini, anthropic, ollama')
+    if not 1 <= len(workers) <= 6 or any(not p or p not in KEYS for p in workers):
+        raise ValueError('Choose one to six WORKER_PROVIDERS: openai, gemini, anthropic, ollama')
     return dict(cost_per_1k_tokens=rates, workers=[dict(provider=p, model=models[i] if i < len(models) and models[i] else model_for(p)) for i, p in enumerate(workers)],
-                trader=dict(provider=trader, model=os.getenv('TRADER_MODEL') or model_for(trader)),
-                analyst=dict(provider=analyst, model=os.getenv('ANALYST_MODEL') or model_for(analyst)))
+                )
 
 
 def readiness(config):
-    providers = {s['provider'] for s in config['workers'] + [config['trader'], config['analyst']]}
+    providers = {s['provider'] for s in config['workers']}
     return [KEYS[p] for p in sorted(providers) if KEYS[p] and not os.getenv(KEYS[p])]
 
 

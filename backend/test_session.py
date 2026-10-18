@@ -1,0 +1,121 @@
+"""Run with: python -m unittest backend.test_session -v."""
+import asyncio
+import copy
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+scratch = tempfile.TemporaryDirectory()
+os.environ['EVALUATION_DB'] = str(Path(scratch.name) / 'test.sqlite3')
+os.environ['DATABASE_URL'] = ''
+from backend import main as exchange
+from fastapi.testclient import TestClient
+
+
+class SessionCheck(unittest.TestCase):
+    def test_complete_quiz_and_persistence(self):
+        state = exchange.initial_state()
+        state['round'] = 1
+        asyncio.run(exchange.benchmark(state))
+        self.assertTrue(all(len(w['answers']) == 10 for w in state['workers']))
+        self.assertTrue(all(w['scores'][0]['stage'] == 'quiz' for w in state['workers']))
+        state['phase'] = 'complete'
+        exchange.persist(state)
+        self.assertEqual(exchange.restore(), state)
+
+    def test_restore_keeps_only_session_fields(self):
+        state = exchange.initial_state()
+        state.update(unexpected_old_field={})
+        exchange.persist(state)
+        restored = exchange.restore()
+        self.assertNotIn('unexpected_old_field', restored)
+
+    def test_failed_quiz_rolls_back(self):
+        exchange.session.clear()
+        exchange.session.update(exchange.initial_state())
+        before = copy.deepcopy(exchange.session)
+        async def fail(state):
+            state['workers'][0]['score'] = 1
+            raise ValueError('test failure')
+        with patch.object(exchange, 'benchmark', fail):
+            asyncio.run(exchange.run_round())
+        self.assertEqual(exchange.session['workers'], before['workers'])
+        self.assertEqual(exchange.session['round'], 0)
+        self.assertFalse(exchange.session['running'])
+        self.assertEqual(exchange.session['phase'], 'error')
+
+    def test_failed_quiz_names_http_provider_and_status(self):
+        exchange.session.clear()
+        exchange.session.update(exchange.initial_state())
+        async def fail(state):
+            response = exchange.httpx.Response(429, request=exchange.httpx.Request('POST', 'https://generativelanguage.googleapis.com/v1beta/models/test'))
+            raise exchange.httpx.HTTPStatusError('quota', request=response.request, response=response)
+        with patch.object(exchange, 'benchmark', fail):
+            asyncio.run(exchange.run_round())
+        self.assertIn('Gemini HTTP 429', exchange.session['error'])
+
+    def test_multiple_quizzes_stop_after_failure(self):
+        exchange.session.clear()
+        exchange.session.update(exchange.initial_state())
+        calls = 0
+        async def fail_on_second():
+            nonlocal calls
+            calls += 1
+            exchange.session.update(running=False, phase='error' if calls == 2 else 'complete')
+        with patch.object(exchange, 'run_round', fail_on_second):
+            asyncio.run(exchange.run_rounds(3))
+        self.assertEqual(calls, 2)
+
+    def test_selected_quiz_count_in_both_modes(self):
+        async def check(mode, count):
+            exchange.session.clear()
+            exchange.session.update(exchange.initial_state())
+            response = await exchange.start_round(exchange.StartRequest(mode=mode, rounds=count))
+            self.assertEqual(response['rounds'], count)
+            await exchange.task
+            self.assertEqual(exchange.session['round'], count)
+            self.assertEqual(exchange.session['phase'], 'complete')
+        async def benchmark(state):
+            for worker in state['workers']:
+                worker['score'] = 80
+        with patch.object(exchange.providers, 'readiness', return_value=[]), patch.object(exchange, 'benchmark', benchmark):
+            for mode in ('demo', 'live'):
+                for count in (1, 3, 10):
+                    with self.subTest(mode=mode, quizzes=count):
+                        asyncio.run(check(mode, count))
+
+    def test_demo_run_only_uses_selected_agents(self):
+        async def check():
+            exchange.session.clear()
+            exchange.session.update(exchange.initial_state())
+            await exchange.start_round(exchange.StartRequest(mode='demo', agent_ids=['nova']))
+            self.assertEqual([worker['id'] for worker in exchange.session['workers']], ['nova'])
+            exchange.task.cancel()
+            try:
+                await exchange.task
+            except asyncio.CancelledError:
+                pass
+            exchange.session['running'] = False
+        asyncio.run(check())
+
+    def test_api_boundaries(self):
+        exchange.session.clear()
+        exchange.session.update(exchange.initial_state())
+        with TestClient(exchange.app) as client:
+            self.assertEqual(client.get('/api/session').status_code, 200)
+            self.assertEqual(client.get('/api/market').status_code, 404)
+            self.assertEqual(client.post('/api/rounds', json={'mode': 'invalid'}).status_code, 422)
+            self.assertEqual(client.post('/api/rounds', json={'rounds': 11}).status_code, 422)
+
+    def test_scoring_parser(self):
+        self.assertEqual(exchange.number('reasoning\n#### 1,200'), 1200)
+        self.assertEqual(exchange.number('$10.50'), 10.5)
+        for invalid in ['NaN', 'Infinity', '4 or 5', None]:
+            with self.assertRaises(ValueError):
+                exchange.number(invalid)
+
+
+if __name__ == '__main__':
+    unittest.main()

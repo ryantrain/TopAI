@@ -7,27 +7,21 @@ import Composer from './composer';
 import Sidebar from './sidebar';
 import ProgressChart from './progress-chart';
 import ReportCard, { Recommendation } from './report-card';
-import SolanaReceipt from './solana-receipt';
 import WorksheetModal from './worksheet-modal';
 import { modelMetrics, recommend, withAspects } from './model-metrics.mjs';
 import { readApiResponse } from './api-response.mjs';
 
 const STEPS = ['Setup', 'Running', 'Result'];
 const PHASES = {
-  benchmark: ['Part A', 'Answering 10 questions'],
-  trading: ['Checking', 'Part A is being marked'],
-  reveal: ['Part B', 'Answering 10 new questions'],
-  settlement: ['Marking', 'Part B is being marked'],
-  analysis: ['Wrapping up', 'Preparing results'],
+  benchmark: ['Quiz', 'Agents are answering the same 10 questions'],
 };
-const PHASE_ORDER = ['benchmark', 'trading', 'reveal', 'settlement', 'analysis'];
 
 // Per-viewer conveniences only; the page works without storage.
 function load(key, storage, fallback) { try { return JSON.parse(storage.getItem(key)) ?? fallback; } catch { return fallback; } }
 function store(key, storage, value) { try { storage.setItem(key, JSON.stringify(value)); } catch {} }
 
 export default function ClassroomPage() {
-  const [market, setMarket] = useState(null);
+  const [session, setSession] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState(null);
@@ -40,10 +34,10 @@ export default function ClassroomPage() {
   const refresh = useCallback(async () => {
     const request = ++latest.current;
     try {
-      const response = await fetch('/api/market', { cache: 'no-store' });
+      const response = await fetch('/api/session', { cache: 'no-store' });
       if (!response.ok) throw new Error('The backend is not running. Start FastAPI on port 8000.');
       const data = await response.json();
-      if (request === latest.current) { setMarket(data); setError(e => e.startsWith('The backend') ? '' : e); }
+      if (request === latest.current) { setSession(data); setError(e => e.startsWith('The backend') ? '' : e); }
     } catch (e) { if (request === latest.current) setError(e.message); }
   }, []);
 
@@ -52,7 +46,7 @@ export default function ClassroomPage() {
     setActive({ ...DEFAULT_ACTIVE, ...load('activeAgentsV2', localStorage, {}) });
     refresh();
   }, [refresh]);
-  useEffect(() => { const t = setInterval(refresh, market?.running || busy ? 500 : 2000); return () => clearInterval(t); }, [market?.running, busy, refresh]);
+  useEffect(() => { const t = setInterval(refresh, session?.running || busy ? 500 : 2000); return () => clearInterval(t); }, [session?.running, busy, refresh]);
 
   function toggle(key) {
     setActive(previous => { const next = { ...previous, [key]: !previous[key] }; store('activeAgentsV2', localStorage, next); return next; });
@@ -66,10 +60,10 @@ export default function ClassroomPage() {
         const { judge_model, saved_at, execution_spec, ...body } = plan;
         await readApiResponse(await fetch('/api/benchmark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
       }
-      const mode = market?.live_available ? 'live' : 'demo';
+      const mode = session?.live_available ? 'live' : 'demo';
       const agent_ids = agents.filter(agent => agent.active).map(agent => agent.id);
       await readApiResponse(await fetch('/api/rounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, rounds, agent_ids }) }));
-      const next = { startRound: market?.round || 0, rounds, mode };
+      const next = { startRound: session?.round || 0, rounds, mode };
       setRun(next); store('classRun', sessionStorage, next);
       await refresh();
     } catch (e) { setError(e.message); }
@@ -87,45 +81,45 @@ export default function ClassroomPage() {
     finally { setBusy(false); }
   }
 
-  const agents = seatedAgents(market?.workers || [], active);
+  const agents = seatedAgents(session?.workers || [], active);
   // Only switched-on agents are included in the run request and comparison.
   const inClass = agents.filter(a => a.active);
   const classroom = agents;
-  const countItems = market?.dataset?.benchmark_plan?.method === 'items';
-  const step = market?.running || (busy && run) ? 1 : market?.round > 0 ? 2 : 0;
+  const countItems = session?.dataset?.benchmark_plan?.method === 'items';
+  const step = session?.running || (busy && run) ? 1 : session?.round > 0 ? 2 : 0;
   useEffect(() => { window.scrollTo({ top: 0 }); }, [step]);
 
   const rows = withAspects(modelMetrics(inClass, null, countItems));
   const pick = recommend(rows, minimum);
-  const liveRun = market?.mode === 'live' || (step === 0 && market?.live_available);
-  const config = market?.configuration || market?.integrations?.configuration;
+  const liveRun = session?.mode === 'live' || (step === 0 && session?.live_available);
+  const config = session?.configuration || session?.integrations?.configuration;
   const models = agents.map((agent, index) => liveRun
     ? [config?.workers?.[index]?.provider, config?.workers?.[index]?.model].filter(Boolean).join(' · ') || agent.model || 'API agent'
     : 'Simulated demo agent');
-  const evaluator = market?.dataset?.benchmark_plan?.evaluator || market?.integrations?.evaluator;
+  const evaluator = session?.dataset?.benchmark_plan?.evaluator || session?.integrations?.evaluator;
   const judgeLabel = evaluator?.provider === 'gemini' ? 'Gemini API' : 'Local Ollama fallback';
-  const remaining = market?.dataset ? Math.floor(market.dataset.count / 20) - (market?.round || 0) : 10 - (market?.round || 0);
+  const remaining = session?.dataset ? Math.floor(session.dataset.count / 10) - (session?.round || 0) : 10 - (session?.round || 0);
 
-  const phase = market?.phase;
+  const phase = session?.phase;
   const [phaseTitle, phaseDetail] = PHASES[phase] || ['Starting', 'Handing out questions'];
   const total = run?.rounds || 1;
-  const quiz = Math.min(total, Math.max(1, (market?.round || 1) - (run?.startRound || 0)));
-  const progress = Math.min(1, ((quiz - 1) + Math.max(0, PHASE_ORDER.indexOf(phase)) / PHASE_ORDER.length) / total);
+  const quiz = Math.min(total, Math.max(1, (session?.round || 1) - (run?.startRound || 0)));
+  const progress = Math.min(1, (quiz - 0.5) / total);
   const state = step === 0 ? 'idle' : step === 2 ? 'done' : phase === 'benchmark' || phase === 'reveal' ? 'working' : 'waiting';
 
   const statuses = step === 1 ? Object.fromEntries(agents.map(a => [a.id, state === 'working' ? phaseTitle : a.score !== null ? `${a.score}% last part` : 'Waiting'])) : {};
   const scores = step === 2 ? Object.fromEntries(rows.map(r => [r.id, r.accuracy !== null ? `${r.accuracy.toFixed(0)}%` : '—'])) : {};
-  const goal = market?.dataset?.benchmark_plan?.goal;
+  const goal = session?.dataset?.benchmark_plan?.goal;
 
   return <div className="shell">
     <Sidebar>
       <dl className="session">
-        <div><dt>Worksheet</dt><dd>{market?.dataset ? `${market.dataset.name} · ${market.dataset.count} q` : 'None selected'}</dd></div>
-        <div><dt>Run</dt><dd>{step === 0 ? (market?.live_available ? `${agents.length} API agents ready` : 'Demo fallback ready') : liveRun ? 'API agents' : 'Demo fallback'}</dd></div>
+        <div><dt>Worksheet</dt><dd>{session?.dataset ? `${session.dataset.name} · ${session.dataset.count} q` : 'None selected'}</dd></div>
+        <div><dt>Run</dt><dd>{step === 0 ? (session?.live_available ? `${agents.length} API agents ready` : 'Demo fallback ready') : liveRun ? 'API agents' : 'Demo fallback'}</dd></div>
         <div><dt>Judge</dt><dd>{judgeLabel}</dd></div>
-        <div><dt>Quizzes done</dt><dd>{market?.round || 0}</dd></div>
+        <div><dt>Quizzes done</dt><dd>{session?.round || 0}</dd></div>
       </dl>
-      <button type="button" className="sidebar-button" onClick={newClass} disabled={!market || market.running || busy}><RotateCcw size={14}/>New class</button>
+      <button type="button" className="sidebar-button" onClick={newClass} disabled={!session || session.running || busy}><RotateCcw size={14}/>New class</button>
     </Sidebar>
 
     <div className="workspace">
@@ -142,7 +136,7 @@ export default function ClassroomPage() {
           {step === 2 && <button type="button" className="quiet-button" disabled={busy || remaining < 1} onClick={() => start({ rounds: 1, plan: null })} title={remaining < 1 ? 'No unused questions left' : undefined}><Play size={14}/>One more quiz</button>}
         </header>
 
-        {(error || market?.error) && <div className="notice" role="alert">{error || market.error}</div>}
+        {(error || session?.error) && <div className="notice" role="alert">{error || session.error}</div>}
 
         <div className="stage-grid">
           <div className="stage-left">
@@ -159,9 +153,8 @@ export default function ClassroomPage() {
             <ReportCard rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>
           </div>}
         </div>
-        {step === 2 && <SolanaReceipt market={market} onBusy={setBusy} refresh={refresh}/>} 
       </main>
-      <Composer market={market} step={step} busy={busy} refresh={refresh} onStart={start} onNewTask={newClass} onError={setError}/>
+      <Composer session={session} step={step} busy={busy} refresh={refresh} onStart={start} onNewTask={newClass} onError={setError}/>
     </div>
     {selected && <WorksheetModal worker={agents.find(w => w.id === selected)} onClose={closeSheet}/>}
   </div>;

@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from backend import test_evaluation
-from backend.test_market import exchange
+from backend.test_session import exchange
 from backend import datasets, evaluation, providers
 from fastapi.testclient import TestClient
 
@@ -24,7 +24,7 @@ class LatexMathCheck(unittest.TestCase):
             with TestClient(exchange.app) as client:
                 response = client.post(f'/api/dataset?filename=integrals.json&scoring={scoring}', content=raw)
                 self.assertEqual(response.status_code, 200, response.text)
-                dataset = exchange.market['dataset']
+                dataset = exchange.session['dataset']
                 self.assertEqual(dataset['problems'], [{k: r[k] for k in ('question', 'answer')} for r in self.rows()])
                 plan = response.json()['benchmark_plan']
                 self.assertEqual(plan['method'], 'rubric')
@@ -45,7 +45,7 @@ class LatexMathCheck(unittest.TestCase):
         self.assertNotIn(self.rows()[1]['answer'], plan['instructions'])
 
     def test_detection_leaves_other_datasets_alone(self):
-        self.assertIsNone(evaluation.latex_math_plan('Classify', exchange.market['dataset']))
+        self.assertIsNone(evaluation.latex_math_plan('Classify', exchange.session['dataset']))
         with self.assertRaises(ValueError):
             datasets.parse_dataset(json.dumps([dict(question=f'Label {i}', answer='text') for i in range(20)]).encode(), 'labels.json', 'numeric')
         with self.assertRaises(ValueError):

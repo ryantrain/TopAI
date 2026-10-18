@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
-from backend.test_market import exchange
+from backend.test_session import exchange
 from backend import datasets, evaluation, providers
 
 
@@ -38,26 +38,26 @@ class EvaluationCheck(unittest.TestCase):
             saved = client.put('/api/benchmark', json=plan)
             self.assertEqual(saved.status_code, 200)
             self.assertIn('saved_at', saved.json())
-            self.assertEqual(client.get('/api/market').json()['dataset']['benchmark_plan'], saved.json())
+            self.assertEqual(client.get('/api/session').json()['dataset']['benchmark_plan'], saved.json())
             self.assertEqual(exchange.restore()['dataset']['benchmark_plan'], saved.json())
         state = exchange.initial_state()
-        state.update(round=1, mode='live', dataset=exchange.market['dataset'])
+        state.update(round=1, mode='live', dataset=exchange.session['dataset'])
         with patch.object(exchange, 'ask', AsyncMock(return_value=dict(answers=[['A', 'a', 'B']] * 10, _total_tokens=1000))) as ask:
             asyncio.run(exchange.benchmark(state))
         self.assertTrue(all(w['scores'][0]['output_count'] == 20 for w in state['workers']))
         self.assertIn('JSON array of distinct', ask.call_args.args[1])
 
     def setUp(self):
-        self.previous = copy.deepcopy(exchange.market)
-        exchange.market.clear()
-        exchange.market.update(exchange.initial_state())
-        exchange.market['dataset'] = datasets.parse_dataset(json.dumps([
+        self.previous = copy.deepcopy(exchange.session)
+        exchange.session.clear()
+        exchange.session.update(exchange.initial_state())
+        exchange.session['dataset'] = datasets.parse_dataset(json.dumps([
             dict(question=f'Input {i}', answer='reference') for i in range(20)
         ]).encode(), 'examples.json', 'exact')
 
     def tearDown(self):
-        exchange.market.clear()
-        exchange.market.update(self.previous)
+        exchange.session.clear()
+        exchange.session.update(self.previous)
 
     def test_evaluator_decides_verdicts_and_receives_criteria(self):
         plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='numeric', tolerance=1,
@@ -111,9 +111,9 @@ class EvaluationCheck(unittest.TestCase):
             saved = client.put('/api/benchmark', json={**body, 'method': 'rubric'})
             self.assertEqual(saved.status_code, 200)
             self.assertEqual(saved.json()['evaluator'], dict(provider='ollama', model=providers.model_for('ollama')))
-            exchange.market['round'] = 1
+            exchange.session['round'] = 1
             self.assertEqual(client.put('/api/benchmark', json=body).status_code, 409)
-            exchange.market['round'] = 0
+            exchange.session['round'] = 0
             client.delete('/api/dataset')
             self.assertEqual(client.put('/api/benchmark', json=body).status_code, 400)
 
@@ -122,7 +122,7 @@ class EvaluationCheck(unittest.TestCase):
             draft = dict(goal='Classify tickets', method='exact')
             with patch.object(providers, 'local_models_ready', AsyncMock()), patch.object(evaluation, 'suggest', AsyncMock(return_value=draft)):
                 self.assertEqual(client.post('/api/benchmark/suggest', json=dict(goal=draft['goal'])).status_code, 200)
-            self.assertNotIn('benchmark_plan', exchange.market['dataset'])
+            self.assertNotIn('benchmark_plan', exchange.session['dataset'])
             with patch.object(providers, 'local_models_ready', AsyncMock(side_effect=ConnectionError())):
                 response = client.post('/api/benchmark/suggest', json=dict(goal=draft['goal']))
                 self.assertEqual(response.status_code, 400)
@@ -150,18 +150,18 @@ class EvaluationCheck(unittest.TestCase):
             asyncio.run(providers.local_models_ready(['local-test']))
             with self.assertRaises(ValueError):
                 asyncio.run(providers.local_models_ready(['missing']))
-        with patch.dict(os.environ, dict(WORKER_PROVIDERS='ollama,ollama,ollama', TRADER_PROVIDER='ollama', ANALYST_PROVIDER='ollama')):
+        with patch.dict(os.environ, dict(WORKER_PROVIDERS='ollama,ollama,ollama')):
             self.assertEqual(providers.readiness(providers.configuration()), [])
         with self.assertRaises(ValueError):
             asyncio.run(providers.ask('x', 'y', provider='ollama', model='model:cloud'))
 
     def test_numeric_plan_over_text_import_and_ground_truth_separation(self):
-        dataset = exchange.market['dataset']
+        dataset = exchange.session['dataset']
         for p in dataset['problems']:
             p['answer'] = '10'
         plan = evaluation.BenchmarkPlan(goal='Estimate marks', method='numeric', tolerance=1).model_dump()
         dataset['benchmark_plan'] = plan
-        state = exchange.market
+        state = exchange.session
         state.update(round=1, mode='live')
         mock = AsyncMock(return_value=dict(answers=[9] * 10, _total_tokens=100))
         judge = AsyncMock(return_value=dict(grades=[dict(id=i, correct=True, score=99, reason='Within tolerance') for i in range(10)]))
@@ -180,17 +180,17 @@ class EvaluationCheck(unittest.TestCase):
 
     def test_missing_local_model_prevents_paid_worker_calls(self):
         plan = evaluation.BenchmarkPlan(goal='Summarize', method='rubric', rubric='Preserve facts').model_dump()
-        exchange.market['dataset']['benchmark_plan'] = plan
+        exchange.session['dataset']['benchmark_plan'] = plan
         with TestClient(exchange.app) as client, patch.dict(os.environ, dict(WORKER_PROVIDERS='ollama,ollama,ollama', GEMINI_API_KEY='test-key')), \
                 patch.object(providers, 'readiness', return_value=[]), \
                 patch.object(providers, 'local_models_ready', AsyncMock(side_effect=ConnectionError())), \
                 patch.object(exchange, 'ask', AsyncMock()) as ask:
             self.assertEqual(client.post('/api/rounds', json=dict(mode='live')).status_code, 400)
-            self.assertFalse(exchange.market['running'])
+            self.assertFalse(exchange.session['running'])
             ask.assert_not_called()
 
     def test_demo_run_preflights_local_judge(self):
-        exchange.market['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact').model_dump()
+        exchange.session['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact').model_dump()
         with TestClient(exchange.app) as client, \
                 patch.object(providers, 'local_models_ready', AsyncMock(side_effect=ConnectionError())), \
                 patch.object(exchange, 'ask', AsyncMock()) as ask:
@@ -200,7 +200,7 @@ class EvaluationCheck(unittest.TestCase):
             ask.assert_not_called()
 
     def test_live_run_keeps_evaluator_usage_out_of_worker_metrics(self):
-        state = exchange.market
+        state = exchange.session
         state.update(mode='live', round=1)
         plan = evaluation.BenchmarkPlan(goal='Summarize faithfully', method='rubric', rubric='No invented facts').model_dump()
         state['dataset']['benchmark_plan'] = plan
@@ -217,7 +217,7 @@ class EvaluationCheck(unittest.TestCase):
 
     def test_paper_grading_template_is_refined_by_planner(self):
         goal = 'i want the best one for grading papers'
-        dataset = exchange.market['dataset']
+        dataset = exchange.session['dataset']
         for p in dataset['problems']:
             p['answer'] = 8
         dataset['tolerance'] = 1
@@ -244,16 +244,16 @@ class EvaluationCheck(unittest.TestCase):
 
     def test_task_entry_before_upload_and_dataset_specific_draft(self):
         with TestClient(exchange.app) as client:
-            exchange.market['dataset'] = None
+            exchange.session['dataset'] = None
             draft = json.loads(evaluation.paper_grading_plan('Grade papers')['execution_spec'])
             with patch.object(providers, 'local_models_ready', AsyncMock()), patch.object(providers, 'ask', AsyncMock(return_value=draft)):
                 response = client.post('/api/benchmark/suggest', json=dict(goal='I want the best model for grading papers'))
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()['method'], 'numeric')
-            self.assertIsNone(exchange.market['dataset'])
+            self.assertIsNone(exchange.session['dataset'])
 
     def test_general_planner_uses_dataset_context_without_reference_keys(self):
-        dataset = exchange.market['dataset']
+        dataset = exchange.session['dataset']
         response = evaluation.BenchmarkProtocol(method='exact', instructions='Classify each input', procedure='Compare ticket labels against references.').model_dump()
         mock = AsyncMock(return_value=response)
         with patch.object(providers, 'local_models_ready', AsyncMock()), patch.object(providers, 'ask', mock):
@@ -265,8 +265,8 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual(result['goal'], 'Classify tickets')
 
 
-    def test_execution_string_controls_real_calls_scoring_and_holdout(self):
-        dataset = exchange.market['dataset']
+    def test_execution_string_controls_real_calls_and_scoring(self):
+        dataset = exchange.session['dataset']
         for p in dataset['problems']:
             p['answer'] = '10'
         protocol = evaluation.BenchmarkProtocol(method='numeric', instructions='Grade each paper.',
@@ -280,7 +280,7 @@ class EvaluationCheck(unittest.TestCase):
             self.assertEqual(response.json()['method'], 'numeric')
             self.assertEqual(response.json()['repetitions'], 3)
             self.assertEqual(exchange.restore()['dataset']['benchmark_plan']['execution_spec'], response.json()['execution_spec'])
-        state = exchange.market
+        state = exchange.session
         state.update(round=1, mode='live')
         calls = []
         async def respond(questions, instructions, **kwargs):
@@ -303,8 +303,9 @@ class EvaluationCheck(unittest.TestCase):
                 self.assertAlmostEqual(worker['diagnostics']['mean_absolute_error'], 1)
                 self.assertAlmostEqual(worker['diagnostics']['grading_bias'], -1)
                 self.assertEqual([a['attempt'] for a in worker['answers']], [1]*10 + [2]*10 + [3]*10)
+            state['round'] = 2
             calls.clear()
-            asyncio.run(exchange.benchmark(state, reveal=True))
+            asyncio.run(exchange.benchmark(state))
             self.assertTrue(public.isdisjoint(calls[0][0]))
         self.assertEqual(evaluation.select_problems(dataset, 0, response.json()), evaluation.select_problems(dataset, 0, response.json()))
         self.assertEqual(dataset['problems'][0]['question'], 'Input 0')
@@ -318,7 +319,7 @@ class EvaluationCheck(unittest.TestCase):
             unsupported = dict(unsupported_requirements=['Needs image inputs'])
             response = client.put('/api/benchmark', json=dict(goal='Test', execution_spec=json.dumps(unsupported)))
             self.assertEqual(response.status_code, 400)
-            self.assertNotIn('benchmark_plan', exchange.market['dataset'])
+            self.assertNotIn('benchmark_plan', exchange.session['dataset'])
 
     def test_open_ended_plan_saves_without_extra_criteria(self):
         # Extra criteria are optional: the reference answer is the ground truth Ollama compares against.
@@ -350,7 +351,7 @@ class EvaluationCheck(unittest.TestCase):
                 asyncio.run(evaluation.suggest('Test a model'))
 
     def test_missing_usage_on_a_repeat_is_not_reported_as_complete(self):
-        state = exchange.market
+        state = exchange.session
         state.update(round=1, mode='live')
         state['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', repetitions=2).model_dump()
         calls = {}

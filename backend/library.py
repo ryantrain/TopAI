@@ -183,7 +183,7 @@ def export(entry):
 
 
 def combine(entries):
-    """Merge selected files into one dataset, alternating between files so every round mixes them."""
+    """Merge selected files into one dataset, alternating between files so every quiz mixes them."""
     scoring = 'numeric' if all(e['scoring'] == 'numeric' for e in entries) else 'exact'
     problems, seen = [], set()
     queues = [list(e['problems']) for e in entries]

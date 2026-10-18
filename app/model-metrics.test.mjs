@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { modelMetrics, metricLeaders, fastestQualified, withAspects, cumulativeSeries, recommend, letterGrade } from './model-metrics.mjs';
-const worker = (name, correct, tokens, seconds) => ({ name, scores: [{ round: 1, stage: 'benchmark', correct, total_tokens: tokens, elapsed_seconds: seconds, attempted: 10 }] });
+const worker = (name, correct, tokens, seconds) => ({ name, scores: [{ round: 1, stage: 'quiz', correct, total_tokens: tokens, elapsed_seconds: seconds, attempted: 10 }] });
 test('item efficiency and overall use actual item counts with matched coverage', () => {
   const a = worker('More ideas', 8, 1000, 10), b = worker('Fewer ideas', 10, 1000, 10);
   a.scores[0].output_count = 40;
@@ -32,7 +32,7 @@ test('missing usage excludes unmatched batches and ties remain ties', () => {
 });
 test('aggregate ratios use totals and selected round', () => {
   const a = worker('A', 5, 100, 2);
-  a.scores.push({ round: 2, stage: 'reveal', correct: 10, total_tokens: 900, elapsed_seconds: 8, attempted: 10 });
+  a.scores.push({ round: 2, stage: 'quiz', correct: 10, total_tokens: 900, elapsed_seconds: 8, attempted: 10 });
   assert.equal(modelMetrics([a])[0].efficiency, 15);
   assert.equal(modelMetrics([a])[0].speed, 0.5);
   assert.equal(modelMetrics([a], 2)[0].speed, 0.8);
@@ -40,7 +40,7 @@ test('aggregate ratios use totals and selected round', () => {
 test('USD per 1,000 tokens uses weighted totals and requires complete pricing', () => {
   const a = worker('A', 5, 100, 2);
   a.scores[0].estimated_cost_usd = 0.001;
-  a.scores.push({ round: 2, stage: 'benchmark', correct: 5, attempted: 10, total_tokens: 900, elapsed_seconds: 2, estimated_cost_usd: 0.018 });
+  a.scores.push({ round: 2, stage: 'quiz', correct: 5, attempted: 10, total_tokens: 900, elapsed_seconds: 2, estimated_cost_usd: 0.018 });
   assert.equal(modelMetrics([a])[0].costPer1k, 0.019);
   assert.equal(modelMetrics([worker('Unknown', 5, 100, 2)])[0].costPer1k, null);
   a.scores[1].estimated_cost_usd = null;
@@ -67,10 +67,10 @@ test('recommendation prefers qualified overall, else accuracy then overall', () 
   assert.equal(recommend([], 80), null);
 });
 test('cumulative series keeps running accuracy per batch', () => {
-  const a = { id: 'a', scores: [{ round: 1, stage: 'benchmark', correct: 10, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }, { round: 1, stage: 'reveal', correct: 0, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }] };
+  const a = { id: 'a', scores: [{ round: 1, stage: 'quiz', correct: 10, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }, { round: 2, stage: 'quiz', correct: 0, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }] };
   const rows = cumulativeSeries([a], 'accuracy');
   assert.deepEqual(rows.map(r => r.a), [100, 50]);
-  assert.deepEqual(rows.map(r => r.label), ['Quiz 1 · A', 'Quiz 1 · B']);
+  assert.deepEqual(rows.map(r => r.label), ['Quiz 1', 'Quiz 2']);
   assert.equal(letterGrade(85), 'B');
   assert.equal(letterGrade(null), '—');
 });

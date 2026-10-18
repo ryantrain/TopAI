@@ -44,8 +44,8 @@ def parse_dataset(raw, filename, scoring):
         if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance) or tolerance < 0:
             raise ValueError('Tolerance must be a finite nonnegative number.')
         rows = rows.get('examples')
-    if not isinstance(rows, list) or not 20 <= len(rows) <= 2000:
-        raise ValueError('Include 20–2,000 examples (20 distinct examples per round).')
+    if not isinstance(rows, list) or not 10 <= len(rows) <= 2000:
+        raise ValueError('Include 10–2,000 examples (10 distinct examples per quiz).')
     if is_latex_math(rows):
         scoring = 'exact'  # Preserve symbolic references; the upload route installs math judging.
     problems, seen = [], set()
@@ -62,7 +62,7 @@ def parse_dataset(raw, filename, scoring):
         question = question.strip()
         key = ' '.join(question.casefold().split())
         if key in seen:
-            raise ValueError(f'Row {i}: duplicate question. Use distinct questions to avoid holdout leakage.')
+            raise ValueError(f'Row {i}: duplicate question. Each quiz needs distinct questions.')
         seen.add(key)
         if scoring == 'numeric':
             from backend.main import number

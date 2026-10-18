@@ -10,7 +10,7 @@ const ACCEPT = '.pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.docx,.pptx,.xlsx,.csv,.j
 const date = iso => { try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return ''; } };
 
 export default function DatasetsPage() {
-  const [market, setMarket] = useState(null);
+  const [session, setSession] = useState(null);
   const [error, setError] = useState('');
   const [uploads, setUploads] = useState([]);
   const [dragging, setDragging] = useState(false);
@@ -20,9 +20,9 @@ export default function DatasetsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch('/api/market', { cache: 'no-store' });
+      const response = await fetch('/api/session', { cache: 'no-store' });
       if (!response.ok) throw new Error('The backend is not running. Start FastAPI on port 8000.');
-      setMarket(await response.json());
+      setSession(await response.json());
       setError(e => e.startsWith('The backend') ? '' : e);
     } catch (e) { setError(e.message); }
   }, []);
@@ -35,10 +35,10 @@ export default function DatasetsPage() {
     return () => document.removeEventListener('keydown', onKey);
   }, [preview]);
 
-  const files = market?.library || [];
-  const selection = market?.selection || [];
-  const count = market?.selection_count || 0;
-  const locked = !!market?.running || !!market?.round;
+  const files = session?.library || [];
+  const selection = session?.selection || [];
+  const count = session?.selection_count || 0;
+  const locked = !!session?.running || !!session?.round;
   const uploading = uploads.some(u => u.status === 'reading');
 
   async function upload(list) {
@@ -106,7 +106,7 @@ export default function DatasetsPage() {
         <section className="dataset-list" aria-labelledby="saved-title">
           <div className="section-row">
             <div><h2 id="saved-title">Your datasets</h2>
-              <p>{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'quiz' : 'quizzes'} available${count < 20 ? ` · add ${20 - count} more questions to run` : ''}` : 'None selected: choose or upload at least 20 questions before starting.'}</p></div>
+              <p>{selection.length ? `${count} questions selected · ${Math.floor(count / 10)} ${Math.floor(count / 10) === 1 ? 'quiz' : 'quizzes'} available${count < 10 ? ` · add ${10 - count} more questions to run` : ''}` : 'None selected: choose or upload at least 10 questions before starting.'}</p></div>
             {selection.length > 0 && !locked && <button type="button" className="link-button" onClick={() => act('all', () => selectWorksheets([]))}>Clear selection</button>}
           </div>
           {locked && <p className="muted">A class is in progress or has results, so the selection is fixed. Start a new class in the classroom to change it. You can still upload and preview.</p>}
@@ -127,7 +127,7 @@ export default function DatasetsPage() {
                 </div></td>
               </tr>)}</tbody>
             </table></div>}
-          <p className="fine-print">Each quiz uses 20 questions: 10 in Part A and 10 new ones in Part B. Ticking several datasets merges them into one question set. Only upload material you have permission to use; files that need reading are sent to Gemini.</p>
+          <p className="fine-print">Each quiz gives the same 10 fresh questions to every selected agent. Ticking several datasets merges them into one question set. Only upload material you have permission to use; files that need reading are sent to Gemini.</p>
         </section>
       </main>
     </div>

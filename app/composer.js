@@ -17,8 +17,8 @@ export const METHODS = {
 const BLANK_PLAN = { goal: '', method: 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: 0.000001, pass_score: 80, repetitions: 1 };
 
 // Chat-style task box: describe the task, attach a worksheet with +, start with the arrow.
-export default function Composer({ market, step, busy, refresh, onStart, onNewTask, onError }) {
-  const dataset = market?.dataset;
+export default function Composer({ session, step, busy, refresh, onStart, onNewTask, onError }) {
+  const dataset = session?.dataset;
   const [plan, setPlan] = useState(dataset?.benchmark_plan || BLANK_PLAN);
   const [details, setDetails] = useState(false);
   const [drafting, setDrafting] = useState(false);
@@ -27,14 +27,14 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   const [rounds, setRounds] = useState(1);
   const fileInput = useRef(null);
   const textarea = useRef(null);
-  // Selected worksheets with fewer than 20 questions leave no dataset, which blocks runs.
-  const selectedCount = market?.selection?.length ? market.selection_count || 0 : null;
-  const maxRounds = dataset ? Math.floor(dataset.count / 20) : 0;
+  // Selected worksheets with fewer than 10 questions leave no dataset, which blocks runs.
+  const selectedCount = session?.selection?.length ? session.selection_count || 0 : null;
+  const maxRounds = dataset ? Math.floor(dataset.count / 10) : 0;
   const locked = step === 1;
-  const evaluator = dataset?.benchmark_plan?.evaluator || market?.integrations?.evaluator;
+  const evaluator = dataset?.benchmark_plan?.evaluator || session?.integrations?.evaluator;
   const judge = evaluator?.provider === 'gemini' ? 'Gemini judge' : 'Ollama fallback judge';
-  const agentCount = market?.integrations?.configuration?.workers?.length || market?.workers?.length || 3;
-  const runLabel = market?.live_available ? `${agentCount} API ${agentCount === 1 ? 'agent' : 'agents'}` : `${market?.workers?.length || 3} demo agents`;
+  const agentCount = session?.integrations?.configuration?.workers?.length || session?.workers?.length || 3;
+  const runLabel = session?.live_available ? `${agentCount} API ${agentCount === 1 ? 'agent' : 'agents'}` : `${session?.workers?.length || 3} demo agents`;
 
   const savedPlan = JSON.stringify(dataset?.benchmark_plan || null);
   // Adopt a server-saved plan, but never overwrite a task the user has already typed.
@@ -80,7 +80,7 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
 
   const tooSmall = (dataset || selectedCount !== null) && maxRounds < 1;
   const canSend = step === 2 ? !!plan.goal.trim() && !busy
-    : step === 0 && !!plan.goal.trim() && !!market && !busy && !uploading && !drafting && !tooSmall;
+    : step === 0 && !!plan.goal.trim() && !!session && !busy && !uploading && !drafting && !tooSmall;
 
   function send() {
     if (!canSend) return;
@@ -91,11 +91,11 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   const note = step === 1 ? 'Agents are working. The task is locked until this class ends.'
     : step === 2 ? 'Send a new task to start a fresh class.'
     : uploading ? uploading
-    : tooSmall ? `Selected worksheets have ${dataset?.count ?? selectedCount} questions; a quiz needs 20. Add or tick more worksheets.`
-    : !dataset ? 'Add or select a worksheet with at least 20 questions before starting.'
-    : market?.live_available
+    : tooSmall ? `Selected worksheets have ${dataset?.count ?? selectedCount} questions; a quiz needs 10. Add or tick more worksheets.`
+    : !dataset ? 'Add or select a worksheet with at least 10 questions before starting.'
+    : session?.live_available
       ? `${agentCount} configured API ${agentCount === 1 ? 'agent is' : 'agents are'} ready. ${judge} compares answers with your key.`
-      : `${market?.workers?.length || 3} simulated agents are ready because the API agent setup is incomplete. ${judge} compares answers with your key.`;
+      : `${session?.workers?.length || 3} simulated agents are ready because the API agent setup is incomplete. ${judge} compares answers with your key.`;
 
   return <div className="composer-wrap">
     {details && step === 0 && <div className="composer-details">
@@ -111,7 +111,7 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
     </div>}
 
     {step === 0 && <div className="composer-options">
-      <BenchmarkPicker market={market} disabled={busy || !!uploading} refresh={refresh} onError={onError}/>
+      <BenchmarkPicker session={session} disabled={busy || !!uploading} refresh={refresh} onError={onError}/>
       {uploading && <span className="chip"><Loader2 size={13} className="spin"/>Reading…</span>}
       <label className="chip">Marking<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
       {plan.method === 'numeric' && <label className="chip">±<input className="tolerance" type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))} aria-label="Allowed error"/></label>}

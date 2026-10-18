@@ -31,8 +31,8 @@ def office_file(entries):
 
 class LibraryCheck(unittest.TestCase):
     def setUp(self):
-        exchange.market.clear()
-        exchange.market.update(exchange.initial_state())
+        exchange.session.clear()
+        exchange.session.update(exchange.initial_state())
 
     def convert(self, client, reply, filename='sheet.pdf'):
         with patch.dict(os.environ, {'GEMINI_API_KEY': 'test-key'}), patch.object(exchange, 'ask', AsyncMock(return_value=reply)) as gemini:
@@ -67,48 +67,48 @@ class LibraryCheck(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.json()['selected'])
             self.assertEqual(gemini.call_args.kwargs['attachment']['mime_type'], 'application/pdf')
-            market = client.get('/api/market').json()
-            self.assertEqual(market['dataset']['name'], 'Fractions')
-            self.assertEqual(market['dataset']['remaining_rounds'], 1)
-            self.assertNotIn('problems', market['library'][0])
-            self.assertNotIn('F question 0?', json.dumps(market))
+            session = client.get('/api/session').json()
+            self.assertEqual(session['dataset']['name'], 'Fractions')
+            self.assertEqual(session['dataset']['remaining_rounds'], 2)
+            self.assertNotIn('problems', session['library'][0])
+            self.assertNotIn('F question 0?', json.dumps(session))
             with patch.object(exchange, 'run_rounds', AsyncMock()):
                 self.assertEqual(client.post('/api/rounds', json={'mode': 'demo'}).status_code, 202)
 
     def test_multiple_small_files_combine_into_one_benchmark(self):
         with TestClient(exchange.app) as client:
-            first = self.convert(client, dict(name='Numbers', examples=examples('N', 12)))[0].json()['entry']['id']
-            self.assertIsNone(exchange.market['dataset'])
+            first = self.convert(client, dict(name='Numbers', examples=examples('N', 6)))[0].json()['entry']['id']
+            self.assertIsNone(exchange.session['dataset'])
             self.assertEqual(client.post('/api/rounds', json={'mode': 'demo'}).status_code, 400)
-            second = self.convert(client, dict(name='Words', examples=examples('W', 12, lambda i: f'word {i}')))[0].json()['entry']['id']
-            self.assertEqual(exchange.market['selection'], [second])
+            second = self.convert(client, dict(name='Words', examples=examples('W', 6, lambda i: f'word {i}')))[0].json()['entry']['id']
+            self.assertEqual(exchange.session['selection'], [second])
             chosen = client.put('/api/library/selection', json={'ids': [first, second]}).json()
-            self.assertEqual((chosen['count'], chosen['ready']), (24, True))
-            dataset = exchange.market['dataset']
+            self.assertEqual((chosen['count'], chosen['ready']), (12, True))
+            dataset = exchange.session['dataset']
             self.assertEqual((dataset['scoring'], dataset['name']), ('exact', 'Numbers + 1 more'))
-            # Files alternate so the first round mixes both, and numbers become exact-match text.
+            # Files alternate so the first quiz mixes both, and numbers become exact-match text.
             self.assertEqual([p['question'][0] for p in dataset['problems'][:4]], ['N', 'W', 'N', 'W'])
             self.assertEqual(dataset['problems'][2]['answer'], '2')
             download = client.get(f'/api/library/{first}')
             self.assertIn('attachment', download.headers['content-disposition'])
-            self.assertEqual(len(download.json()['examples']), 12)
+            self.assertEqual(len(download.json()['examples']), 6)
             self.assertEqual(client.delete(f'/api/library/{second}').status_code, 200)
-            self.assertEqual((exchange.market['selection'], exchange.market['dataset']), ([first], None))
+            self.assertEqual((exchange.session['selection'], exchange.session['dataset']), ([first], None))
 
     def test_library_survives_new_session_and_locks_during_a_session(self):
         with TestClient(exchange.app) as client:
             uploaded = client.post('/api/dataset?filename=niche.json', content=json.dumps(examples('U', 40)))
             self.assertEqual(uploaded.status_code, 200)
-            file_id = exchange.market['selection'][0]
-            self.assertEqual(exchange.market['library'][0]['origin'], 'uploaded')
-            exchange.market['round'] = 1
+            file_id = exchange.session['selection'][0]
+            self.assertEqual(exchange.session['library'][0]['origin'], 'uploaded')
+            exchange.session['round'] = 1
             self.assertEqual(client.put('/api/library/selection', json={'ids': []}).status_code, 409)
             self.assertEqual(client.delete(f'/api/library/{file_id}').status_code, 409)
             response, _ = self.convert(client, dict(examples=examples('L', 20)))
             self.assertFalse(response.json()['selected'])
-            self.assertEqual(exchange.market['selection'], [file_id])
+            self.assertEqual(exchange.session['selection'], [file_id])
             self.assertEqual(client.post('/api/reset').status_code, 200)
-            self.assertEqual((len(exchange.market['library']), exchange.market['selection'], exchange.market['dataset']), (2, [], None))
+            self.assertEqual((len(exchange.session['library']), exchange.session['selection'], exchange.session['dataset']), (2, [], None))
             self.assertEqual(exchange.restore()['library'][1]['id'], file_id)
 
     def test_quota_errors_explain_when_to_retry(self):
@@ -133,7 +133,7 @@ class LibraryCheck(unittest.TestCase):
             response, gemini = send(client, 'set.json', json.dumps(dict(name='Kept', tolerance=0.5, examples=examples('J', 20))))
             self.assertEqual(response.status_code, 200)
             gemini.assert_not_called()
-            entry = exchange.market['library'][0]
+            entry = exchange.session['library'][0]
             self.assertEqual((entry['name'], entry['count'], entry['scoring'], entry['tolerance']), ('Kept', 20, 'numeric', 0.5))
             response, gemini = send(client, 'rows.jsonl', '\n'.join(json.dumps(r) for r in examples('L', 3, lambda i: f'word {i}')))
             gemini.assert_not_called()
