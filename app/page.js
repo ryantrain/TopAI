@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Play, RotateCcw } from 'lucide-react';
 import AgentsPanel, { DEFAULT_ACTIVE, extraAgents, seatedAgents } from './agents';
 import Composer from './composer';
+import Sidebar from './sidebar';
 import ProgressChart from './progress-chart';
 import ReportCard, { Recommendation } from './report-card';
 import WorksheetModal from './worksheet-modal';
@@ -109,16 +110,14 @@ export default function ClassroomPage() {
   const goal = market?.dataset?.benchmark_plan?.goal;
 
   return <div className="shell">
-    <aside className="sidebar">
-      <a className="brand" href="/"><span className="brand-mark" aria-hidden="true"/>Agent Classroom</a>
-      <p className="sidebar-label">Dashboard</p>
+    <Sidebar>
       <dl className="session">
         <div><dt>Worksheet</dt><dd>{market?.dataset ? `${market.dataset.name} · ${market.dataset.count} q` : 'Sample questions'}</dd></div>
         <div><dt>Run</dt><dd>{step === 0 ? '—' : market?.mode === 'live' ? 'Real models' : 'Practice (simulated)'}</dd></div>
         <div><dt>Quizzes done</dt><dd>{market?.round || 0}</dd></div>
       </dl>
       <button type="button" className="sidebar-button" onClick={newClass} disabled={!market || market.running || busy}><RotateCcw size={14}/>New class</button>
-    </aside>
+    </Sidebar>
 
     <div className="workspace">
       <main className={`stage stage-${step}`}>

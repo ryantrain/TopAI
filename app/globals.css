@@ -35,6 +35,12 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 650; letter-spacing: -.2px; margin-bottom: 26px; }
 .brand-mark { width: 22px; height: 16px; border-radius: 3px; background: var(--navy); box-shadow: inset 0 -4px 0 var(--wood); }
 .sidebar-label { font-size: 11px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); padding: 0 8px; margin-bottom: 4px; }
+.side-nav { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.side-nav a { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; color: var(--ink-2); text-decoration: none; font-size: 13.5px; }
+.side-nav a:hover { background: rgba(255,255,255,.6); }
+.side-nav a.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--line); }
+.side-nav svg { color: var(--muted); }
+.side-nav a.on svg { color: var(--navy); }
 .session { display: flex; flex-direction: column; gap: 12px; padding: 14px 8px; border-top: 1px solid var(--line); }
 .session dt { font-size: 11px; color: var(--muted); }
 .session dd { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
@@ -214,9 +220,49 @@ tr.top td { background: #f8f7f3; }
 .picker-forget { flex: none; padding: 4px 8px; border-radius: 6px; color: var(--muted); font-size: 12px; }
 .picker-forget:hover:not(:disabled) { background: var(--line); color: var(--ink); }
 .picker-note { margin: 4px 14px 8px; font-size: 12px; color: var(--muted); }
+.picker-manage { display: block; padding: 8px 14px 4px; font-size: 13px; font-weight: 550; color: var(--navy); }
 .picker-foot { margin-top: 6px; padding: 9px 14px 4px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .unsupported { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: #fbf6ea; border: 1px solid #efe1bf; font-size: 12.5px; }
 .unsupported ul { margin: 4px 0 0; padding-left: 18px; color: var(--ink-2); }
+
+/* Datasets page */
+.stage.datasets { max-width: 1040px; }
+.page-head .quiet-button { text-decoration: none; color: var(--ink); }
+.upload-zone { display: flex; gap: 16px; align-items: flex-start; padding: 26px 24px; border: 1.5px dashed var(--line-strong); border-radius: 16px; background: var(--bg); transition: border-color .2s ease, background .2s ease; }
+.upload-zone.dragging { border-color: var(--navy); background: #eef0f5; }
+.upload-zone > svg { flex: none; margin-top: 2px; color: var(--navy); }
+.upload-zone h2 { font-size: 15px; font-weight: 650; }
+.upload-zone p { margin-top: 4px; font-size: 13px; color: var(--ink-2); max-width: 70ch; }
+.link-label { position: relative; color: var(--navy); text-decoration: underline; cursor: pointer; }
+.link-label input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.link-label:focus-within { outline: 2px solid var(--navy); outline-offset: 2px; border-radius: 3px; }
+.link-button { color: var(--navy); font-size: 13px; font-weight: 550; }
+.link-button:hover { text-decoration: underline; }
+.upload-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; }
+.upload-list li { display: grid; grid-template-columns: 16px minmax(0, 220px) minmax(0, 1fr); gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.upload-list li:last-child { border-bottom: 0; }
+.upload-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.upload-list span { color: var(--ink-2); }
+.upload-list .added svg { color: var(--good); }
+.upload-list .failed svg, .upload-list .failed span { color: var(--bad); }
+.upload-list .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
+.upload-list .upload-done { display: flex; justify-content: flex-end; }
+.dataset-list { display: flex; flex-direction: column; gap: 10px; }
+.section-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.section-row h2 { font-size: 16px; font-weight: 650; }
+.section-row p { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.dataset-list .table-wrap { margin: 0; border: 1px solid var(--line); border-radius: 12px; }
+.dataset-list td { vertical-align: middle; }
+.dataset-list input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--navy); }
+.dataset-name { display: flex; flex-direction: column; min-width: 0; }
+.dataset-name strong { font-weight: 600; white-space: normal; }
+.dataset-name small { color: var(--muted); font-size: 12px; }
+.flag { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: #fbf3e0; color: #8a6100; font-size: 11.5px; font-weight: 550; }
+.row-actions { display: inline-flex; gap: 2px; }
+.row-actions .icon-button { color: var(--ink-2); }
+.empty-state { padding: 28px; border: 1px dashed var(--line-strong); border-radius: 12px; text-align: center; color: var(--muted); }
+.preview-instructions { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 13px; color: var(--ink-2); }
+.sheet.numbered .mark { font-size: 12px; font-weight: 600; color: var(--muted); }
 
 /* Answers modal */
 .modal-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(29, 29, 34, .32); }
@@ -247,6 +293,9 @@ tr.top td { background: #f8f7f3; }
   .shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
     .sidebar-label, .session { display: none; }
+    .side-nav { flex-direction: row; order: 3; width: 100%; margin: 0; }
+    .upload-list li { grid-template-columns: 16px minmax(0, 1fr); }
+    .upload-list li span { grid-column: 2; }
       .sidebar-button { margin: 0 0 0 auto; }
   .stage { padding: 22px 16px 16px; }
   .page-head { flex-direction: column; align-items: flex-start; }

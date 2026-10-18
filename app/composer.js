@@ -4,13 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Loader2, Plus, SlidersHorizontal, Wand2, X } from 'lucide-react';
 import BenchmarkPicker from './benchmark-picker';
 import { readApiResponse } from './api-response.mjs';
+import { uploadWorksheets } from './library-api.mjs';
 
-const readBase64 = file => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
-  reader.onerror = () => reject(new Error('Could not read the file.'));
-  reader.readAsDataURL(file);
-});
 
 export const METHODS = {
   exact: 'Exact match',
@@ -66,26 +61,19 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   async function upload(files) {
     if (!files.length) return;
     onError('');
-    const added = [], failed = [];
-    let selected = true;
-    for (const [i, file] of files.entries()) {
-      setUploading(files.length > 1 ? `Reading ${file.name} (${i + 1}/${files.length})…` : `Reading ${file.name}…`);
-      try {
-        if (file.size > 10 * 1024 * 1024) throw new Error('Choose a file smaller than 10 MB.');
-        const result = await readApiResponse(await fetch('/api/library/convert', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name, mime_type: file.type, data: await readBase64(file) }) }));
-        added.push(result.entry.id); selected = result.selected;
-      } catch (e) { failed.push(`${file.name}: ${e.message}`); }
-    }
+    const failed = [];
     try {
-      // Everything uploaded together runs together.
-      if (selected && added.length > 1) await readApiResponse(await fetch('/api/library/selection', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: added }) }));
+      await uploadWorksheets(files, (i, u) => {
+        if (u.status === 'reading') setUploading(files.length > 1 ? `Reading ${files[i].name} (${i + 1}/${files.length})…` : `Reading ${files[i].name}…`);
+        if (u.status === 'failed') failed.push(`${files[i].name}: ${u.message}`);
+      });
       await refresh();
     } catch (e) { failed.push(e.message); }
     if (failed.length) onError(failed.join(' '));
     setUploading('');
     if (fileInput.current) fileInput.current.value = '';
   }
+
 
   const liveBlocked = mode === 'live' && (!market?.live_available || !dataset);
   const tooSmall = (dataset || selectedCount !== null) && maxRounds < 1;
