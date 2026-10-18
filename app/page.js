@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Play, RotateCcw } from 'lucide-react';
-import AgentsPanel, { DEFAULT_ACTIVE, extraAgents, seatedAgents } from './agents';
+import AgentsPanel, { DEFAULT_ACTIVE, seatedAgents } from './agents';
 import Composer from './composer';
 import Sidebar from './sidebar';
 import ProgressChart from './progress-chart';
@@ -49,13 +49,13 @@ export default function ClassroomPage() {
 
   useEffect(() => {
     setRun(load('classRun', sessionStorage, null));
-    setActive({ ...DEFAULT_ACTIVE, ...load('activeAgents', localStorage, {}) });
+    setActive({ ...DEFAULT_ACTIVE, ...load('activeAgentsV2', localStorage, {}) });
     refresh();
   }, [refresh]);
   useEffect(() => { const t = setInterval(refresh, market?.running || busy ? 500 : 2000); return () => clearInterval(t); }, [market?.running, busy, refresh]);
 
   function toggle(key) {
-    setActive(previous => { const next = { ...previous, [key]: !previous[key] }; store('activeAgents', localStorage, next); return next; });
+    setActive(previous => { const next = { ...previous, [key]: !previous[key] }; store('activeAgentsV2', localStorage, next); return next; });
   }
 
   async function start({ rounds, plan }) {
@@ -66,8 +66,10 @@ export default function ClassroomPage() {
         const { judge_model, saved_at, execution_spec, ...body } = plan;
         await readApiResponse(await fetch('/api/benchmark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
       }
-      await readApiResponse(await fetch('/api/rounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'demo', rounds }) }));
-      const next = { startRound: market?.round || 0, rounds };
+      const mode = market?.live_available ? 'live' : 'demo';
+      const agent_ids = agents.filter(agent => agent.active).map(agent => agent.id);
+      await readApiResponse(await fetch('/api/rounds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, rounds, agent_ids }) }));
+      const next = { startRound: market?.round || 0, rounds, mode };
       setRun(next); store('classRun', sessionStorage, next);
       await refresh();
     } catch (e) { setError(e.message); }
@@ -86,16 +88,22 @@ export default function ClassroomPage() {
   }
 
   const agents = seatedAgents(market?.workers || [], active);
-  // Switched-off agents still run on the backend, but are left out of every comparison.
+  // Only switched-on agents are included in the run request and comparison.
   const inClass = agents.filter(a => a.active);
-  const classroom = agents.length ? [...agents, ...extraAgents(active)] : [];
+  const classroom = agents;
   const countItems = market?.dataset?.benchmark_plan?.method === 'items';
   const step = market?.running || (busy && run) ? 1 : market?.round > 0 ? 2 : 0;
   useEffect(() => { window.scrollTo({ top: 0 }); }, [step]);
 
   const rows = withAspects(modelMetrics(inClass, null, countItems));
   const pick = recommend(rows, minimum);
-  const models = agents.map(() => 'Simulated demo agent');
+  const liveRun = market?.mode === 'live' || (step === 0 && market?.live_available);
+  const config = market?.configuration || market?.integrations?.configuration;
+  const models = agents.map((agent, index) => liveRun
+    ? [config?.workers?.[index]?.provider, config?.workers?.[index]?.model].filter(Boolean).join(' · ') || agent.model || 'API agent'
+    : 'Simulated demo agent');
+  const evaluator = market?.dataset?.benchmark_plan?.evaluator || market?.integrations?.evaluator;
+  const judgeLabel = evaluator?.provider === 'gemini' ? 'Gemini API' : 'Local Ollama fallback';
   const remaining = market?.dataset ? Math.floor(market.dataset.count / 20) - (market?.round || 0) : 10 - (market?.round || 0);
 
   const phase = market?.phase;
@@ -113,8 +121,8 @@ export default function ClassroomPage() {
     <Sidebar>
       <dl className="session">
         <div><dt>Worksheet</dt><dd>{market?.dataset ? `${market.dataset.name} · ${market.dataset.count} q` : 'None selected'}</dd></div>
-        <div><dt>Run</dt><dd>{step === 0 ? '—' : 'Simulated agents'}</dd></div>
-        <div><dt>Judge</dt><dd>Local Ollama</dd></div>
+        <div><dt>Run</dt><dd>{step === 0 ? (market?.live_available ? `${agents.length} API agents ready` : 'Demo fallback ready') : liveRun ? 'API agents' : 'Demo fallback'}</dd></div>
+        <div><dt>Judge</dt><dd>{judgeLabel}</dd></div>
         <div><dt>Quizzes done</dt><dd>{market?.round || 0}</dd></div>
       </dl>
       <button type="button" className="sidebar-button" onClick={newClass} disabled={!market || market.running || busy}><RotateCcw size={14}/>New class</button>
@@ -128,7 +136,7 @@ export default function ClassroomPage() {
             <h1>{step === 0 ? 'Choose your agents and set the task' : step === 1 ? `Quiz ${quiz} of ${total} · ${phaseTitle}` : 'How the agents did'}</h1>
             <p>{step === 0 ? 'Switch on the agents you want to compare, describe the task below, and add a worksheet with questions and answers.'
               : step === 1 ? `${phaseDetail}. Every agent gets the same questions without the answer key.`
-              : goal || 'Simulated answers judged against your worksheet by local Ollama.'}</p>
+              : goal || `${liveRun ? 'API' : 'Simulated'} answers judged against your worksheet by ${judgeLabel}.`}</p>
             {step === 1 && <div className="progress" role="progressbar" aria-label="Class progress" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progress * 100}%` }}/></div>}
           </div>
           {step === 2 && <button type="button" className="quiet-button" disabled={busy || remaining < 1} onClick={() => start({ rounds: 1, plan: null })} title={remaining < 1 ? 'No unused questions left' : undefined}><Play size={14}/>One more quiz</button>}

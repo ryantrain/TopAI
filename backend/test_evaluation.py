@@ -13,6 +13,21 @@ from backend import datasets, evaluation, providers
 
 
 class EvaluationCheck(unittest.TestCase):
+    def test_evaluator_prefers_gemini_and_falls_back_to_ollama(self):
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured'}):
+            self.assertEqual(evaluation.evaluator(), dict(provider='gemini', model=providers.model_for('gemini')))
+        with patch.dict(os.environ, {'GEMINI_API_KEY': ''}):
+            self.assertEqual(evaluation.evaluator(), dict(provider='ollama', model=providers.model_for('ollama')))
+
+    def test_gemini_evaluation_failure_uses_ollama(self):
+        plan = evaluation.BenchmarkPlan(goal='Check answer', method='exact').model_dump()
+        verdict = dict(grades=[dict(id=0, correct=True, score=100, reason='Matches')])
+        ask = AsyncMock(side_effect=[RuntimeError('Gemini unavailable'), verdict])
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured'}), patch.object(providers, 'ask', ask):
+            grade = asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['A'], plan))[0]
+        self.assertEqual([call.kwargs['provider'] for call in ask.call_args_list], ['gemini', 'ollama'])
+        self.assertEqual(grade['evaluator_provider'], 'ollama')
+
     def test_generated_items_count_and_saved_metadata(self):
         plan = evaluation.BenchmarkPlan(goal='Generate ideas', method='items', output_unit='ideas').model_dump()
         answers = [['Solar oven', ' solar   OVEN ', 'Rain barrel'], 'not json', [], [True], '["One", "Two"]']

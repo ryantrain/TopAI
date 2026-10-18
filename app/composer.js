@@ -11,7 +11,7 @@ export const METHODS = {
   exact: 'Exact match',
   numeric: 'Number within tolerance',
   json: 'Structured JSON',
-  rubric: 'Ollama rubric judge',
+  rubric: 'AI rubric judge',
   items: 'Count distinct items',
 };
 const BLANK_PLAN = { goal: '', method: 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: 0.000001, pass_score: 80, repetitions: 1 };
@@ -31,6 +31,10 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   const selectedCount = market?.selection?.length ? market.selection_count || 0 : null;
   const maxRounds = dataset ? Math.floor(dataset.count / 20) : 0;
   const locked = step === 1;
+  const evaluator = dataset?.benchmark_plan?.evaluator || market?.integrations?.evaluator;
+  const judge = evaluator?.provider === 'gemini' ? 'Gemini judge' : 'Ollama fallback judge';
+  const agentCount = market?.integrations?.configuration?.workers?.length || market?.workers?.length || 3;
+  const runLabel = market?.live_available ? `${agentCount} API ${agentCount === 1 ? 'agent' : 'agents'}` : `${market?.workers?.length || 3} demo agents`;
 
   const savedPlan = JSON.stringify(dataset?.benchmark_plan || null);
   // Adopt a server-saved plan, but never overwrite a task the user has already typed.
@@ -89,7 +93,9 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
     : uploading ? uploading
     : tooSmall ? `Selected worksheets have ${dataset?.count ?? selectedCount} questions; a quiz needs 20. Add or tick more worksheets.`
     : !dataset ? 'Add or select a worksheet with at least 20 questions before starting.'
-    : 'The three demo agents produce simulated answers. Local Ollama judges them against your answer key.';
+    : market?.live_available
+      ? `${agentCount} configured API ${agentCount === 1 ? 'agent is' : 'agents are'} ready. ${judge} compares answers with your key.`
+      : `${market?.workers?.length || 3} simulated agents are ready because the API agent setup is incomplete. ${judge} compares answers with your key.`;
 
   return <div className="composer-wrap">
     {details && step === 0 && <div className="composer-details">
@@ -109,7 +115,7 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
       {uploading && <span className="chip"><Loader2 size={13} className="spin"/>Reading…</span>}
       <label className="chip">Marking<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
       {plan.method === 'numeric' && <label className="chip">±<input className="tolerance" type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))} aria-label="Allowed error"/></label>}
-      <span className="chip" title="The current prototype uses simulated agents and a local Ollama judge">Simulated agents · Ollama judge</span>
+      <span className="chip" title="The app uses configured API agents when their keys are ready, then falls back to simulated agents">{runLabel} · {judge}</span>
       <label className="chip" title="Ask each agent every question this many times to check consistency">Repeats<select value={plan.repetitions ?? 1} onChange={e => change('repetitions', Number(e.target.value))}>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}×</option>)}</select></label>
       <label className="chip">Quizzes<select value={rounds} onChange={e => setRounds(Number(e.target.value))}>{Array.from({ length: Math.max(1, Math.min(10, maxRounds)) }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
       <button type="button" className="chip action" onClick={() => setDetails(v => !v)} aria-expanded={details}><SlidersHorizontal size={13}/>Details</button>

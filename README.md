@@ -1,83 +1,31 @@
-# Agent Exchange: Dynamic AI Evaluation
+# Agent Exchange
 
-Agent Exchange helps students and teachers compare AI agents on a task they define. The current reference use case is integral mathematics: a user describes the kind of integral test or question-solving task they need, uploads a curated dataset, and runs the same experiment against three worker agents. The app scores the responses and shows which agent performed best for that task.
+Agent Exchange helps students and teachers find the best AI model for a specific task using their own material. The reference use case is integral mathematics: describe the job, upload worksheets with trusted answers, and compare up to six agents on the same questions.
 
-The benchmark pipeline is general. Integral questions are the present use case, but the same pipeline works for classification, numeric estimation, structured output, and open-ended responses. The current prototype uses three seeded simulated agents and a local Ollama model to judge their answers against the user's references.
+The benchmark engine is general enough for numeric answers, exact labels, structured JSON, generated-item counts, and rubric-judged responses.
 
-## How it works
+## Execution flow
 
 ```text
-User goal (plain language)
+User describes the task and uploads worksheets
    ↓
-Local Ollama turns it into benchmark metrics and task instructions
+Local Ollama drafts editable benchmark criteria
    ↓
-User reviews and saves the criteria + uploads the dataset
+App checks WORKER_PROVIDERS and their API keys
+   ├─ ready: run 1–6 configured API/local agents concurrently
+   └─ incomplete: run 3 seeded simulated demo agents
    ↓
-┌─ one stage: a batch of 10 questions ─────────────────────┐
-│ The batch goes to all 3 demo agents concurrently;        │
-│ each agent answers all 10 in one call                    │
-│   ↓                                                      │
-│ Each agent's 10 simulated answers go to local Ollama     │
-│ with the reference answers; Ollama returns correct /     │
-│ not correct with a reason for each                       │
-│   ↓                                                      │
-│ The Python backend stores the 30 verdicts and updates    │
-│ the UI graph and metrics                                 │
-└──────────────────────────────────────────────────────────┘
-   ↓   (a round runs two stages: 10 public, then 10 holdout)
-Final accuracy, speed, token efficiency, cost estimates, and best agent
+Gemini evaluates each completed answer batch when GEMINI_API_KEY is set
+   └─ missing or failed Gemini request: local Ollama evaluates the batch
+   ↓
+Python stores verdicts and updates accuracy, speed, token, cost, and chart data
+   ↓
+Repeat with 10 held-out questions, then recommend the best agent for this task
 ```
 
-The planner does not create ground truth. The uploaded dataset supplies the evaluation questions and reference answers. Users review and save the generated benchmark criteria before a run.
+The uploaded dataset supplies the questions and reference answers. Reference answers never enter worker prompts. A round consumes 20 distinct examples: 10 public questions and 10 held-out questions.
 
-Grading is batched: one round makes **6 local Ollama calls** — one per simulated agent per stage, 10 answers each — rather than one call per answer. Scores and metrics advance at the end of each stage, twice per round.
-
-## Integral-test workflow
-
-1. Describe the task in plain language, for example: `Find the best model for solving first-year integration problems. Return only the final numeric answer.`
-2. Click **Build benchmark from my request**. Local Ollama converts the request into an editable set of benchmark metrics: task instructions, what counts as a correct answer, tolerance, and pass threshold.
-3. Upload one UTF-8 `.json`, `.jsonl`, or `.csv` dataset containing at least 20 distinct examples.
-4. Review and save the benchmark criteria.
-5. Run one or more rounds with the three simulated demo agents.
-6. Each stage runs as a batch: the three agents produce answers for all 10 questions, local Ollama grades each agent's batch, and the backend stores the verdicts and updates the graph and metrics.
-7. Inspect each model's answers, evaluation results, accuracy, response time, token efficiency, estimated cost, and overall ranking.
-
-Each round uses 20 examples: 10 public questions followed by 10 unused holdout questions. Reference answers never enter worker prompts.
-
-For numeric integral answers, a JSON dataset can look like this:
-
-```json
-{
-  "instructions": "Solve each definite integral. Return only the final numeric value.",
-  "tolerance": 0.000001,
-  "examples": [
-    {
-      "question": "Evaluate the definite integral from 0 to 1 of 2x dx.",
-      "answer": 1
-    },
-    {
-      "question": "Evaluate the definite integral from 0 to pi of sin(x) dx.",
-      "answer": 2
-    }
-  ]
-}
-```
-
-Add at least 20 distinct examples. For multiple rounds, provide 20 examples per round.
-
-## Evaluation
-
-Ollama is the evaluator. For each answer it receives the question, the simulated agent's answer, the reference answer, and the saved criteria, then returns a verdict with a short reason. The item-counting method remains deterministic Python because it counts strings rather than judging quality.
-
-The saved criteria shape that verdict rather than selecting a different code path:
-
-| Criterion | What it tells Ollama |
-| --- | --- |
-| Task instructions | What the agent was asked to produce |
-| Tolerance | How close a numeric answer must be to count as correct |
-| Pass threshold | How strict to be on open-ended or partially correct answers |
-
-This makes evaluation flexible — equivalent phrasings, rearranged structures, and `0.5` versus `1/2` can all be accepted — and makes it a local-model estimate rather than a deterministic measurement. Calibrate against hand-graded examples before trusting a ranking.
+Item counting is deterministic Python. Other saved benchmark methods use the selected AI evaluator, so their verdicts are model assessments rather than formal proofs. Users can inspect each question, response, verdict, and reason.
 
 ## Run locally
 
@@ -85,8 +33,8 @@ Requirements:
 
 - Node.js 20.9+
 - Python 3.11+
-- [Ollama](https://ollama.com/) for benchmark planning and answer judging
-- A `GEMINI_API_KEY` only when converting PDFs, photos, or Office files; structured JSON and CSV imports do not require it
+- [Ollama](https://ollama.com/) for benchmark planning and the evaluation fallback
+- Provider API keys for real agents; without a complete agent configuration the app uses the demo fallback
 
 On macOS or Linux:
 
@@ -99,16 +47,7 @@ ollama pull qwen2.5:7b
 .venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-On Windows PowerShell:
-
-```powershell
-npm install
-python -m venv .venv
-.venv\Scripts\python -m pip install -r backend/requirements.txt
-Copy-Item .env.example .env
-ollama pull qwen2.5:7b
-.venv\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
-```
+On Windows PowerShell, use `.venv\Scripts\python` instead of `.venv/bin/python`.
 
 In a second terminal:
 
@@ -116,77 +55,90 @@ In a second terminal:
 npm run dev
 ```
 
-Open <http://127.0.0.1:3000>. Ollama must be running at `http://127.0.0.1:11434` to draft benchmark metrics and judge the simulated agents' answers.
+Open <http://127.0.0.1:3000>. Run `ollama serve` separately if the Ollama desktop app is not already serving `http://127.0.0.1:11434`.
 
-## Model configuration
+## Configure agents and evaluation
 
-Copy `.env.example` to `.env`. The classroom currently uses three seeded simulated agents; it does not call hosted worker models. Configure the local judge:
+Copy `.env.example` to `.env`. `WORKER_PROVIDERS` accepts one to six comma-separated values from `openai`, `gemini`, `anthropic`, and `ollama`. `WORKER_MODELS` and `WORKER_COST_PER_1K_TOKENS` follow the same order.
 
 ```dotenv
+GEMINI_API_KEY=your_key
+GEMINI_MODEL=gemini-3.8-flash
+
+WORKER_PROVIDERS=gemini,gemini,gemini
+WORKER_MODELS=gemini-3.8-flash,gemini-3.8-flash,gemini-3.8-flash
+WORKER_COST_PER_1K_TOKENS=,,
+
+TRADER_PROVIDER=gemini
+ANALYST_PROVIDER=gemini
 OLLAMA_MODEL=qwen2.5:7b
-DATABASE_URL=
 ```
 
-Install `qwen2.5:7b` before starting a run. Models containing `cloud` in their name are rejected by the local provider path. Hosted-provider configuration remains in the backend for future experiments but is not exposed by the current classroom UI.
+At setup, the UI reports either **API agents ready** or **Demo fallback ready**. All keys required by the configured workers, trader, and analyst must be present for an API run. If configuration is invalid or a key is missing, the UI selects the seeded demo automatically.
 
-## Dataset rules
+Evaluation follows a separate priority:
 
-- Upload one file up to 2 MB.
-- Accepted formats are CSV, JSON, and JSONL.
-- Include 20–2,000 distinct examples with `question` and `answer` fields.
-- A JSON object may also include shared `instructions`, `tolerance`, and an `examples` array.
-- Dataset and benchmark criteria are locked after a run starts. Start a new session to change them.
-- Only upload educational material and student work you are permitted to process.
+1. `GEMINI_API_KEY` present: Gemini judges answer batches.
+2. If Gemini is not configured or its request fails: `OLLAMA_MODEL` judges locally.
 
-### Worksheets
+Ollama always drafts benchmark plans. Structured CSV/JSON imports need no conversion model. PDF, photo, Word, Excel, PowerPoint, and text worksheet conversion uses Gemini, with `GEMINI_CONVERT_MODEL` falling back to `GEMINI_MODEL`.
 
-Users only upload worksheets: PDFs, photos, Word, Excel, PowerPoint, or text files up to 10 MB each, several at a time. Behind the scenes the backend sends each file to Gemini (`GEMINI_API_KEY`; `GEMINI_CONVERT_MODEL`, falling back to `GEMINI_MODEL`), which extracts each question with one clear, short answer into question/answer data. The page never mentions the conversion. It uses the worksheet's answer key when there is one; answers it had to work out are counted per worksheet so users can check them. All-numeric answers use numeric scoring; anything else uses exact text matching, unless saved criteria choose another evaluation method. Setup and quota problems are logged on the server; the page shows a plain message.
+## Use the integral benchmark
 
-Every uploaded worksheet is saved to the worksheet menu next to **Run** and selected straight away; worksheets uploaded together are selected together. Tick one or more worksheets to combine them: questions alternate between worksheets so each round mixes them, and duplicates are dropped. Combined worksheets use numeric scoring only if every worksheet does. A selection needs at least 20 questions in total to run. **Forget** removes a worksheet from the menu. Saved worksheets survive **New session**; the selection is fixed once a session has run a round.
+1. Add or select worksheets totaling at least 20 questions.
+2. Describe the task, such as `Find the best agent for first-year indefinite integrals.`
+3. Click **Suggest marking** and review the generated instructions and rubric.
+4. Choose the marking method and number of quizzes.
+5. Start the class. The app selects API agents or the demo fallback automatically.
+6. Inspect the recommendation, result table, chart, and marked answers.
 
-The importer rejects duplicate questions to reduce holdout leakage. It cannot detect paraphrased duplicates or overlap between examples embedded in instructions and evaluation cases.
+A structured dataset can be a CSV, JSON array, JSONL file, or JSON envelope:
 
-## Results
+```json
+{
+  "instructions": "Solve each definite integral. Return only the final numeric value.",
+  "tolerance": 0.000001,
+  "examples": [
+    { "question": "Evaluate the integral from 0 to 1 of 2x dx.", "answer": 1 },
+    { "question": "Evaluate the integral from 0 to pi of sin(x) dx.", "answer": 2 }
+  ]
+}
+```
+
+Provide at least 20 distinct examples and 20 more for every additional round. Imports reject exact duplicate questions, but cannot detect paraphrased leakage or inaccurate answer keys.
+
+## Metrics
 
 The dashboard reports:
 
-- the percentage of answers Ollama marked correct;
-- response time per attempted question;
-- correct answers per 1,000 seeded simulated tokens;
-- optional estimated cost per 1,000 tokens;
-- an overall relative score across the selected worker lineup;
-- the underlying questions, answers, and Ollama's reason for each verdict.
+- evaluator-marked accuracy or pass rate;
+- worker time per attempted question;
+- correct answers per 1,000 worker tokens;
+- optional estimated worker cost;
+- an overall relative score combining token efficiency and throughput;
+- repeat agreement and numeric error diagnostics when applicable.
 
-These update at the end of each stage, so twice per round. Timing and token figures are seeded simulation values; Ollama's grading latency and tokens are excluded.
-
-Results apply only to the uploaded dataset, saved criteria, Ollama's judgment, and simulation conditions. They demonstrate the evaluation workflow and do not establish real model performance.
-
-The existing virtual market remains an experimental visualization layer: trading agents react to public benchmark results before the holdout reveal. It is separate from the direct model-comparison metrics and should not be treated as a financial product or as evidence that a trading strategy is valid.
+Demo timing and token counts are seeded simulation values. Evaluator latency and evaluator tokens are excluded from worker metrics. Results apply only to the uploaded data, prompt, criteria, evaluator, and model versions used in that run.
 
 ## Storage and optional receipts
 
-SQLite is used by default. Set `DATABASE_URL` to a TigerData/PostgreSQL connection string to store active state and completed-round archives remotely. The backend creates `exchange_market` and `exchange_rounds`; switching storage backends does not migrate existing SQLite history.
+SQLite is the default. Set `DATABASE_URL` to a TigerData/PostgreSQL connection string to store active state and completed-round archives remotely. Changing storage backends does not migrate existing history.
 
-After settlement, a user may publish a hash of the round through a Phantom-signed Solana Devnet memo. This is an optional audit receipt. It does not execute model evaluation or transfer tokens on-chain.
+After a completed round, a user may publish its hash through a Phantom-signed Solana Devnet memo. This optional receipt records evidence of the result; it does not run evaluation or transfer tokens.
 
-## API
+Uploaded worksheet source files remain in owner-only local storage. Cloud workers receive benchmark questions. Gemini evaluation receives questions, worker answers, references, and criteria. When Gemini is absent, Ollama evaluation stays on the local machine. Remove unnecessary personal information from student material before using cloud services.
 
-- `GET /api/market` — current experiment state
-- `POST /api/benchmark/suggest` — draft benchmark criteria from a plain-language goal
-- `PUT /api/benchmark` — validate and save benchmark criteria
-- `POST /api/dataset?filename=...&scoring=...` — upload a benchmark dataset
-- `DELETE /api/dataset` — remove the active dataset before a run
-- `POST /api/library/convert` — turn an uploaded worksheet into saved benchmark questions and select it
-- `PUT /api/library/selection` — choose which saved worksheets make up the dataset
-- `GET /api/library/{id}` and `DELETE /api/library/{id}` — export a worksheet's questions, or forget it
-- `POST /api/rounds` — run 1–10 experiment rounds
-- `POST /api/reset` — start a new active session
-- `GET /api/history` — list archived completed rounds
-- `GET /api/receipt` and `POST /api/receipt` — prepare and verify an optional Solana receipt
+## API and verification
 
-FastAPI documentation is available at <http://127.0.0.1:8000/docs> while the backend is running.
+Important routes:
 
-## Verification
+- `GET /api/market` — state plus detected agent/evaluator configuration
+- `POST /api/benchmark/suggest` and `PUT /api/benchmark` — draft and save criteria
+- `POST /api/library/convert` and `PUT /api/library/selection` — import and select worksheets
+- `POST /api/rounds` — run 1–10 rounds
+- `POST /api/reset` — start a new session
+- `GET /api/history` — archived rounds
+- `GET /api/receipt` and `POST /api/receipt` — optional Solana receipt
 
 ```bash
 .venv/bin/python -m unittest backend.test_market backend.test_integrations backend.test_datasets backend.test_evaluation -v
@@ -196,53 +148,4 @@ node app/receipt-transaction.test.mjs
 npm run build
 ```
 
-The automated tests mock external model providers, databases, wallets, and Solana RPC calls. Real provider credentials, local Ollama models, TigerData connectivity, and Phantom/Devnet receipts require separate integration testing.
-
-## Four-person split
-
-| Owner | Scope |
-| --- | --- |
-| Worker / benchmark | `benchmark`, `ask`, GSM8K loading and numeric grading in `backend/main.py` |
-| Trading agents | `trading` and trader prompts in `backend/main.py` |
-| Market / API | `execute_order`, `settle`, SQLite persistence, FastAPI routes |
-| Dashboard | `app/page.js`, `app/globals.css`, Recharts |
-
-API: `GET /api/market`, `POST /api/rounds` with `{"mode":"demo","rounds":3}` or `{"mode":"live","rounds":3}` (1–10 rounds; defaults to 1), `POST /api/reset`, `GET /api/history`, `GET /api/receipt`, and `POST /api/receipt` with signature, session ID, and round. Next.js proxies `/api/*` to port 8000; override with `BACKEND_URL` if needed. FastAPI's local interactive API reference is at http://127.0.0.1:8000/docs.
-
-## Model comparison metrics
-
-The main chart switches between correct questions per 1,000 seeded simulated tokens (higher is better), simulated batch seconds per attempted question (lower is better), and an overall score. These values demonstrate the interface and scoring pipeline; they are not measurements of real model cost or latency.
-
-Category winners include ties. Overall is 100 × the geometric mean of (correct questions/token ÷ the best worker’s rate) and (correct questions/second ÷ the best worker’s rate), with equal weight. Zero-correct workers cannot win overall. Summary comparisons pool matched batches in the selected rounds; chart points compare each batch separately. Overall scores are relative to the selected lineup and workload, not universal model ratings.
-
-Only batches with valid token and timing measurements for every worker are compared. Older histories remain visible elsewhere but are excluded from these metrics. Run new rounds to collect measurements. Demo token counts and timings are seeded simulations, not API measurements. The virtual-credit trading and redemption rules remain separate from the model metrics.
-
-### Custom benchmarks
-
-In Overview, upload a UTF-8 CSV, JSON array, or JSONL file with `question` and `answer` fields. A CSV template is available in the dashboard. Supply 20–2,000 distinct questions, up to 2 MB. Select exact text matching (case-sensitive, surrounding whitespace ignored) or numeric matching (absolute tolerance 0.000001). Open-ended prose needs a different evaluator and is not supported by these scoring rules.
-
-Every round consumes 20 sequential examples: 10 public benchmark questions and 10 fresh holdout questions. All workers receive the same questions without answer keys. Dataset changes require a new session to keep comparisons consistent. Uploads persist in the configured database and completed-round archives; resetting clears the active dataset but retains archives. Live runs send questions to configured AI providers; demo results remain simulated. This is a local shared workspace without user isolation or authentication.
-
-### Cost per 1,000 tokens
-
-Set `WORKER_COST_PER_1K_TOKENS=0.001,0.002,0.003` in the backend environment (illustrative rates only), in the same order as `WORKER_PROVIDERS` / `WORKER_MODELS`. These are operator-supplied **blended USD estimates**, not verified provider invoices. Account for the expected input/output mix, reasoning, caching, and discounts when setting them. Blank entries mean unknown; zero explicitly means free. Start a new session after changing rates. Demo and older unpriced batches show no dollar estimate. The table computes `sum(estimated batch USD) / sum(provider tokens) × 1,000` across matched batches and requires every selected batch to have pricing. Only worker benchmark calls are included.
-
-### Dynamic paper-grading benchmarks
-
-Download the paper grading JSON template from the dataset panel, replace its placeholder papers and marks, choose **Numeric answer**, and upload it. JSON can be an object with:
-
-- `instructions`: task, rubric, mark scale, output requirements, and separately curated marked calibration examples (up to 30,000 characters).
-- `tolerance`: nonnegative absolute mark difference counted as agreement, e.g. `1` for within one mark. Defaults to `0.000001`.
-- `examples`: 20–2,000 distinct `{ "question": "paper + assignment prompt", "answer": 8 }` evaluation examples. Answers are human reference marks.
-
-All three workers receive the same instructions and paper batches. Evaluation marks remain outside their prompts. Each round reserves ten unused papers for settlement. Keep calibration examples separate from evaluation papers; the importer detects duplicate evaluation questions but cannot detect semantic overlap with calibration text. Instructions, tolerance, raw-file digest, results, usage, and elapsed time persist with the session/archive.
-
-Compare agreement percentage, average batch seconds per paper, token efficiency, and estimated dollars per 1,000 tokens. Existing overall ranking balances correct answers per token and per second; it is not a validated measure of feedback quality. Set Minimum accuracy to identify the fastest model meeting your required agreement threshold, then compare cost. Tied speeds remain tied; if no model qualifies, no winner is recommended. Results apply to the uploaded papers and rubric; repeat with representative data before relying on a winner.
-
-For broader dynamic evaluation, the next step is criterion-level human labels and mean absolute mark error, plus confidence intervals across repeated runs. Free-form feedback quality requires separate human review or a calibrated judge; numeric mark agreement alone does not measure it. The current implementation evaluates marks and retains the existing three configured worker slots and market round lifecycle.
-
-### Goal-driven dynamic evaluation
-
-After uploading a dataset, describe your specific need and build a benchmark execution plan. Local Ollama produces a reviewable JSON string controlling example selection, repeated model calls, scoring, tolerance, and judge criteria. The backend validates and executes those settings and reports repeat agreement plus numeric error/bias where applicable. Unsupported operations are rejected. See [dynamic benchmarking and local setup](DYNAMIC_BENCHMARKS.md) for the plan contract, local configuration, and measurement limits.
-
-LaTeX integral question/answer datasets (including mixed symbolic and numeric answers) are recognized on upload. The app preserves the reference strings and automatically saves a local rubric judging plan that checks mathematical equivalence, integration constants, domains, and convergence. This overrides numeric fallback scoring for these datasets. Local Ollama must be available for live judging; judgments are model assessments rather than symbolic proofs. Extra `id` and `topic` fields are accepted but are not used in scoring.
+The automated suite mocks external providers, databases, wallets, and RPC calls. Real credentials and services require a separate integration run.

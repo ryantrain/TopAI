@@ -152,6 +152,21 @@ class MarketCheck(unittest.TestCase):
                     with self.subTest(mode=mode, rounds=count):
                         asyncio.run(check(mode, count))
 
+    def test_demo_run_only_uses_selected_agents(self):
+        async def check():
+            exchange.market.clear()
+            exchange.market.update(exchange.initial_state())
+            response = await exchange.start_round(exchange.StartRequest(mode='demo', agent_ids=['nova']))
+            self.assertEqual(response['status'], 'started')
+            self.assertEqual([worker['id'] for worker in exchange.market['workers']], ['nova'])
+            exchange.task.cancel()
+            try:
+                await exchange.task
+            except asyncio.CancelledError:
+                pass
+            exchange.market['running'] = False
+        asyncio.run(check())
+
     def test_api_boundaries_and_overlap(self):
         exchange.market.clear()
         exchange.market.update(exchange.initial_state())

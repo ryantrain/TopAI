@@ -32,7 +32,7 @@ export default function WorksheetModal({ worker, onClose }) {
       <ol className="sheet">{(worker.answers || []).map((a, i) => <li key={i} className={a.correct ? 'right' : 'wrong'}>
         <span className="mark" aria-label={a.correct ? 'Correct' : 'Incorrect'}>{a.correct ? '✓' : '✗'}</span>
         <div>{a.attempt > 1 && <span className="trial">Repeat {a.attempt}</span>}<p>{a.question}</p><small>Answer: <b>{text(a.answer)}</b> · Key: {text(a.expected)}</small>
-          {a.evaluation_reason && <small className="reason">{a.evaluation_score !== undefined ? `Judge ${a.evaluation_score}/100 · ` : ''}{a.evaluation_reason}</small>}</div>
+          {a.evaluation_reason && <small className="reason">{a.evaluation_score !== undefined ? `Judge ${a.evaluation_score}/100 · ` : ''}{a.evaluation_reason}{a.evaluator_provider ? ` · ${a.evaluator_provider}` : ''}</small>}</div>
       </li>)}</ol>
     </section>
   </div>;

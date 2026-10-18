@@ -17,17 +17,18 @@ def model_for(provider):
 def configuration():
     workers = [p.strip().lower() for p in os.getenv('WORKER_PROVIDERS', 'openai,gemini,openai').split(',')]
     models = [m.strip() for m in os.getenv('WORKER_MODELS', '').split(',')]
-    rates = os.getenv('WORKER_COST_PER_1K_TOKENS', ',,').split(',')
+    raw_rates = os.getenv('WORKER_COST_PER_1K_TOKENS', '')
+    rates = raw_rates.split(',') if raw_rates else [''] * len(workers)
     try:
         rates = [float(rate) if rate.strip() else None for rate in rates]
-        if len(rates) != 3 or any(rate is not None and (not math.isfinite(rate) or rate < 0) for rate in rates):
+        if len(rates) != len(workers) or any(rate is not None and (not math.isfinite(rate) or rate < 0) for rate in rates):
             raise ValueError
     except ValueError:
-        raise ValueError('WORKER_COST_PER_1K_TOKENS must contain three nonnegative USD rates or blank entries') from None
+        raise ValueError('WORKER_COST_PER_1K_TOKENS must contain one nonnegative USD rate or blank entry per worker') from None
     trader = os.getenv('TRADER_PROVIDER', 'gemini').strip().lower()
     analyst = os.getenv('ANALYST_PROVIDER', 'gemini').strip().lower()
-    if len(workers) != 3 or any(p not in KEYS for p in workers + [trader, analyst]):
-        raise ValueError('Choose exactly three WORKER_PROVIDERS and supported trader/analyst providers: openai, gemini, anthropic, ollama')
+    if not 1 <= len(workers) <= 6 or any(not p or p not in KEYS for p in workers + [trader, analyst]):
+        raise ValueError('Choose one to six WORKER_PROVIDERS and supported trader/analyst providers: openai, gemini, anthropic, ollama')
     return dict(cost_per_1k_tokens=rates, workers=[dict(provider=p, model=models[i] if i < len(models) and models[i] else model_for(p)) for i, p in enumerate(workers)],
                 trader=dict(provider=trader, model=os.getenv('TRADER_MODEL') or model_for(trader)),
                 analyst=dict(provider=analyst, model=os.getenv('ANALYST_MODEL') or model_for(analyst)))

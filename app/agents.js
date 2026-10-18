@@ -1,21 +1,16 @@
 'use client';
 
-// The three agents sit at the backend's three worker desks (atlas, nova, orbit) in order.
+// Artwork follows the backend worker order. Configured runs may use one to six seats.
 // Colors are validated as one categorical set (dataviz validate_palette, all pairs).
 export const ROSTER = [
   { key: 'circle', name: 'Circle', color: '#c8553d' },
   { key: 'star', name: 'Star', color: '#d9a300' },
   { key: 'triangle', name: 'Triangle', color: '#2a78d6' },
-];
-// Display-only agents: selectable for show, never sent to the backend or scored.
-export const EXTRAS = [
   { key: 'cloud', name: 'Cloud', color: '#8b6fd6' },
   { key: 'cube', name: 'Cube', color: '#e8705c' },
   { key: 'cylinder', name: 'Cylinder', color: '#4fb57f' },
 ];
-export const DEFAULT_ACTIVE = { circle: true, star: true, triangle: true, cloud: false, cube: false, cylinder: false };
-
-export const extraAgents = active => EXTRAS.map(a => ({ ...a, id: `extra-${a.key}`, display: true, active: !!active[a.key] }));
+export const DEFAULT_ACTIVE = { circle: true, star: true, triangle: true, cloud: true, cube: true, cylinder: true };
 
 export function seatedAgents(workers, active) {
   return workers.map((w, i) => {
@@ -35,7 +30,6 @@ export function AgentImage({ agent, working, animated }) {
 function AgentTile({ agent, index, model, state, status, score, top, onToggle, canTurnOff, onOpen }) {
   const on = agent.active;
   const Frame = onOpen && on && !agent.display ? 'button' : 'div';
-  if (agent.display && on && state !== 'idle') status = 'Display only';
   return <figure className={`agent agent-${on ? state : 'off'} ${top ? 'top' : ''}`} style={{ '--agent': agent.color, '--delay': `${index * -0.9}s` }}>
     <Frame type={Frame === 'button' ? 'button' : undefined} className="agent-frame" onClick={Frame === 'button' ? onOpen : undefined} aria-label={Frame === 'button' ? `Open ${agent.name}'s latest answers` : undefined}>
       <AgentImage agent={agent} working={on} animated={on && (state === 'working' || state === 'waiting')}/>
@@ -47,17 +41,17 @@ function AgentTile({ agent, index, model, state, status, score, top, onToggle, c
       <div className="agent-name-row">
         <span className="seat-name"><span className="swatch"/>{agent.name}</span>
         {onToggle && <button type="button" role="switch" aria-checked={on} aria-label={`${agent.name} takes part`}
-          className={`toggle ${on ? 'on' : ''}`} disabled={on && !canTurnOff && !agent.display} title={on && !canTurnOff && !agent.display ? 'At least one connected agent must take part' : undefined}
+          className={`toggle ${on ? 'on' : ''}`} disabled={on && !canTurnOff} title={on && !canTurnOff ? 'At least one connected agent must take part' : undefined}
           onClick={() => onToggle(agent.key)}><i/></button>}
       </div>
-      <small>{agent.display ? 'Display only · not connected' : on ? model || 'Model not configured' : 'Off · not in this class'}</small>
+      <small>{on ? model || 'Model not configured' : 'Off · not in this class'}</small>
     </figcaption>
   </figure>;
 }
 
 export default function AgentsPanel({ agents: all, models, state, statuses = {}, scores = {}, top, onToggle, onOpen, compact }) {
   const onCount = all.filter(a => a.active).length;
-  const realOn = all.filter(a => a.active && !a.display).length;
+  const realOn = all.filter(a => a.active).length;
   // Once a class starts, only the switched-on agents are shown.
   const agents = compact ? all.filter(a => a.active) : all;
   return <section className={`agents-panel ${compact ? 'compact' : ''}`} aria-label="Agents">

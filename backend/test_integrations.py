@@ -92,6 +92,13 @@ class IntegrationCheck(unittest.TestCase):
             os.environ['WORKER_PROVIDERS'] = 'openai,invalid,gemini'
             with self.assertRaises(ValueError):
                 providers.configuration()
+        six = 'openai,gemini,anthropic,openai,gemini,ollama'
+        with patch.dict(os.environ, {'WORKER_PROVIDERS': six, 'WORKER_COST_PER_1K_TOKENS': ',,,,,'}):
+            self.assertEqual(len(providers.configuration()['workers']), 6)
+        for invalid in ('', 'openai,gemini,anthropic,openai,gemini,ollama,openai'):
+            with patch.dict(os.environ, {'WORKER_PROVIDERS': invalid, 'WORKER_COST_PER_1K_TOKENS': ''}):
+                with self.assertRaises(ValueError):
+                    providers.configuration()
 
     def test_sqlite_archive_survives_reset_and_legacy_load(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {'DATABASE_URL': ''}):
