@@ -2,38 +2,55 @@
 
 Agent Exchange helps students and teachers compare AI agents on a task they define. The current reference use case is integral mathematics: a user describes the kind of integral test or question-solving task they need, uploads a curated dataset, and runs the same experiment against three worker agents. The app scores the responses and shows which agent performed best for that task.
 
-The benchmark pipeline is general. Integral questions are the present use case, but the prompt parser and scoring system also support classification, numeric estimation, structured JSON, generated-item counting, and rubric-graded responses.
+The benchmark pipeline is general. Integral questions are the present use case, but the same pipeline works for classification, numeric estimation, structured output, and open-ended responses, because Gemini decides correctness from the question, the agent's answer, and your reference answer rather than from a fixed comparison rule.
 
 ## How it works
 
 ```text
-User goal
+User goal (plain language)
    ↓
-Local Ollama benchmark planner
+Local Ollama turns it into benchmark metrics and task instructions
    ↓
-Reviewable task instructions + scoring method
+User reviews and saves the criteria + uploads the dataset
    ↓
-Uploaded JSON, JSONL, or CSV dataset
-   ↓
-Three worker agents answer matched public and holdout batches
-   ↓
-Python scoring or a local Ollama rubric judge
-   ↓
-Accuracy, speed, token efficiency, cost estimates, and best agent
+┌─ one round = one batch of questions (20 by default) ─────┐
+│ The batch goes to all 3 demo agents concurrently;        │
+│ each agent answers the whole batch in one call           │
+│   ↓                                                      │
+│ Each agent's answers go to Gemini in ONE call, with the  │
+│ reference answers; Gemini returns correct / not correct  │
+│ with a reason for each                                   │
+│   ↓                                                      │
+│ The Python backend stores the verdicts and updates the   │
+│ UI graph and metrics                                     │
+└──────────────────────────────────────────────────────────┘
+   ↓   (the next round draws the next unused batch)
+Final accuracy, speed, token efficiency, cost estimates, and best agent
 ```
 
 The planner does not create ground truth. The uploaded dataset supplies the evaluation questions and reference answers. Users review and save the generated benchmark criteria before a run.
 
+Grading is batched on purpose, to stay inside Gemini's rate limits. One round makes **3 Gemini calls** — one per agent, the whole batch of answers each, all 3 in flight at a time — not one call per answer. Scores and metrics therefore advance once per round, when the batch is graded, rather than continuously; the price chart gains its points at the public stage, on each trade, and at settlement.
+
 ## Integral-test workflow
 
 1. Describe the task in plain language, for example: `Find the best model for solving first-year integration problems. Return only the final numeric answer.`
-2. Click **Build benchmark from my request**. Local Ollama converts the request into an editable benchmark plan: task instructions, scoring method, tolerance, rubric, and pass threshold where applicable.
+2. Click **Build benchmark from my request**. Local Ollama converts the request into an editable set of benchmark metrics: task instructions, what counts as a correct answer, tolerance, and pass threshold.
 3. Upload one UTF-8 `.json`, `.jsonl`, or `.csv` dataset containing at least 20 distinct examples.
 4. Review and save the benchmark criteria.
 5. Choose the worker models and run one or more rounds.
-6. Inspect each model's answers, evaluation results, accuracy, response time, token efficiency, estimated cost, and overall ranking.
+6. Each stage runs as a batch: the three agents each answer all 10 questions, Gemini grades each agent's 10 answers in a single call, and the backend stores the verdicts and updates the graph and metrics.
+7. Inspect each model's answers, evaluation results, accuracy, response time, token efficiency, estimated cost, and overall ranking.
 
-Each round uses 20 examples: 10 public questions followed by 10 unused holdout questions. Reference answers never enter worker prompts.
+Each round grades one unused batch of questions. The batch is 20 by default; set `batch_size` (1–50) in the saved execution plan to change it. Reference answers never enter worker prompts.
+
+Size the dataset to a whole multiple of the batch, or the remainder is never used: 99 questions at a batch of 20 runs 4 rounds and strands 19 questions, while 100 runs 5 rounds and strands none.
+
+| questions | batch | rounds | Gemini calls |
+| --- | --- | --- | --- |
+| 100 | 20 | 5 | 15 |
+| 100 | 25 | 4 | 12 |
+| 99 | 20 | 4 | 12 (19 questions unused) |
 
 For numeric integral answers, a JSON dataset can look like this:
 
@@ -56,17 +73,19 @@ For numeric integral answers, a JSON dataset can look like this:
 
 Add at least 20 distinct examples. For multiple rounds, provide 20 examples per round.
 
-## Evaluation methods
+## Evaluation
 
-| Method | Use it for | How it is scored |
-| --- | --- | --- |
-| Numeric | Definite integrals, marks, measurements | Absolute difference within the saved tolerance |
-| Exact | Labels or short canonical answers | Case-sensitive text equality after trimming surrounding whitespace |
-| JSON | Structured extraction or generated schemas | Recursive structural equality; object key order is ignored |
-| Rubric | Explanations, worked solutions, test quality | A local Ollama judge scores each response from 0–100 against the saved rubric |
-| Items | Generating test questions or ideas | Counts distinct, nonempty strings returned in a JSON array |
+Gemini is the only evaluator. There are no separate judge or evaluator agents, and no per-method Python comparison. The one exception is the item-counting task, which counts distinct strings in Python because counting is not a verdict. For each answer, Gemini receives the question, the agent's answer, the reference answer, and the saved criteria, and returns a verdict with a short reason.
 
-Rubric scores are model estimates and should be calibrated against human judgments. Item scoring measures output quantity and valid format, not originality or teaching quality.
+The saved criteria shape that verdict rather than selecting a different code path:
+
+| Criterion | What it tells Gemini |
+| --- | --- |
+| Task instructions | What the agent was asked to produce |
+| Tolerance | How close a numeric answer must be to count as correct |
+| Pass threshold | How strict to be on open-ended or partially correct answers |
+
+This makes evaluation flexible — equivalent phrasings, rearranged structures, and `0.5` versus `1/2` can all be accepted — and makes it a model estimate rather than a deterministic measurement. Calibrate against hand-graded examples before trusting a ranking, and do not use Gemini as one of the three demo agents.
 
 ## Run locally
 
@@ -74,7 +93,8 @@ Requirements:
 
 - Node.js 20.9+
 - Python 3.11+
-- [Ollama](https://ollama.com/) for prompt parsing and rubric judging
+- [Ollama](https://ollama.com/) for prompt parsing (turning the user request into benchmark metrics)
+- A `GEMINI_API_KEY` for answer unpacking and grading, or local Ollama as fallback
 
 On macOS or Linux:
 
@@ -104,25 +124,21 @@ In a second terminal:
 npm run dev
 ```
 
-Open <http://127.0.0.1:3000>. Ollama must be running at `http://127.0.0.1:11434` when drafting general benchmark plans or using rubric scoring.
+Open <http://127.0.0.1:3000>. Ollama must be running at `http://127.0.0.1:11434` to draft benchmark metrics from a request. Gemini is preferred for saved benchmark criteria; missing keys and HTTP 429 rate limits automatically use local `OLLAMA_MODEL` instead. Saved criteria are graded in demo mode too.
 
 ## Model configuration
 
-Copy `.env.example` to `.env`. Three worker slots can use OpenAI, Gemini, Anthropic, or local Ollama models.
+Copy `.env.example` to `.env`. Three worker slots can use OpenAI, Gemini, Anthropic, or local Ollama models. Avoid putting Gemini in a worker slot, since Gemini is the evaluator.
 
-For a fully local experiment:
+Evaluation prefers Gemini and falls back to local `OLLAMA_MODEL` when its key is missing or it returns HTTP 429. For local demo agents:
 
 ```dotenv
 OLLAMA_MODEL=qwen2.5:7b
-OLLAMA_JUDGE_MODEL=qwen2.5:7b
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-2.0-flash
 
 WORKER_PROVIDERS=ollama,ollama,ollama
 WORKER_MODELS=qwen2.5:7b,llama3.1:8b,mistral:7b
-
-TRADER_PROVIDER=ollama
-TRADER_MODEL=qwen2.5:7b
-ANALYST_PROVIDER=ollama
-ANALYST_MODEL=qwen2.5:7b
 
 DATABASE_URL=
 ```
@@ -142,26 +158,28 @@ Cloud workers can be configured with `OPENAI_API_KEY`, `GEMINI_API_KEY`, or `ANT
 
 ### Worksheets
 
-Users only upload worksheets: PDFs, photos, Word, Excel, PowerPoint, or text files up to 10 MB each, several at a time. Behind the scenes the backend sends each file to Gemini (`GEMINI_API_KEY`; `GEMINI_CONVERT_MODEL`, falling back to `GEMINI_MODEL`), which extracts each question with one clear, short answer into question/answer data. The page never mentions the conversion. It uses the worksheet's answer key when there is one; answers it had to work out are counted per worksheet so users can check them. All-numeric answers use numeric scoring; anything else uses exact text matching, unless saved criteria choose another evaluation method. Setup and quota problems are logged on the server; the page shows a plain message.
+Users only upload worksheets: PDFs, photos, Word, Excel, PowerPoint, or text files up to 10 MB each, several at a time. Behind the scenes the backend sends each file to Gemini (`GEMINI_API_KEY`; `GEMINI_CONVERT_MODEL`, falling back to `GEMINI_MODEL`), which extracts each question with one clear, short answer into question/answer data. When the key is missing or Gemini returns HTTP 429, conversion uses local `OLLAMA_MODEL`: PDFs have their text extracted locally and images require an installed vision model. Scanned PDFs without text must be uploaded as page images or processed with Gemini. Install backend requirements after updating. The page never mentions the conversion. It uses the worksheet's answer key when there is one; answers it had to work out are counted per worksheet so users can check them. All-numeric answers use numeric scoring; anything else uses exact text matching, unless saved criteria choose another evaluation method. Setup and quota problems are logged on the server; the page shows a plain message.
 
 Every uploaded worksheet is saved to the worksheet menu next to **Run** and selected straight away; worksheets uploaded together are selected together. Tick one or more worksheets to combine them: questions alternate between worksheets so each round mixes them, and duplicates are dropped. Combined worksheets use numeric scoring only if every worksheet does. A selection needs at least 20 questions in total to run. **Forget** removes a worksheet from the menu. Saved worksheets survive **New session**; the selection is fixed once a session has run a round.
 
-The importer rejects duplicate questions to reduce holdout leakage. It cannot detect paraphrased duplicates or overlap between examples embedded in instructions and evaluation cases.
+The importer rejects duplicate questions so the same question is not graded twice across rounds. It cannot detect paraphrased duplicates or overlap between examples embedded in instructions and evaluation cases.
 
 ## Results
 
 The dashboard reports:
 
-- accuracy or rubric pass rate;
+- the percentage of answers Gemini marked correct;
 - response time per attempted question;
 - correct answers per 1,000 provider-reported tokens;
 - optional estimated cost per 1,000 tokens;
 - an overall relative score across the selected worker lineup;
-- the underlying questions, answers, and evaluation reasons.
+- the underlying questions, answers, and Gemini's reason for each verdict.
 
-Results apply only to the uploaded dataset, saved criteria, configured models, and run conditions. They are not universal model rankings. Demo mode uses seeded simulated answers, token counts, and timings and does not establish real model performance.
+These update once per round, when the batch is graded. Demo mode simulates both answers and scores without model calls. Live timing and token figures cover workers only; evaluator latency and tokens are excluded. Local model requests run one at a time to avoid competing for the same accelerator.
 
-The existing virtual market remains an experimental visualization layer: trading agents react to public benchmark results before the holdout reveal. It is separate from the direct model-comparison metrics and should not be treated as a financial product or as evidence that a trading strategy is valid.
+Results apply only to the uploaded dataset, saved criteria, configured models, Gemini's judgment, and run conditions. They are not universal model rankings. Demo mode uses seeded simulated answers, token counts, and timings and does not establish real model performance.
+
+The existing virtual market remains an experimental visualization layer: seeded trading strategies react to each round's benchmark result. They are deterministic rules, not model calls, so they cost no tokens. Since the holdout stage is gone, they settle against the score they already saw, so the market carries no forecasting risk and its P&L is not meaningful. It is separate from the direct model-comparison metrics and should not be treated as a financial product or as evidence that a trading strategy is valid.
 
 ## Storage and optional receipts
 
@@ -203,7 +221,7 @@ The automated tests mock external model providers, databases, wallets, and Solan
 | Owner | Scope |
 | --- | --- |
 | Worker / benchmark | `benchmark`, `ask`, GSM8K loading and numeric grading in `backend/main.py` |
-| Trading agents | `trading` and trader prompts in `backend/main.py` |
+| Trading agents | `trading` and the seeded strategies in `backend/main.py` |
 | Market / API | `execute_order`, `settle`, SQLite persistence, FastAPI routes |
 | Dashboard | `app/page.js`, `app/globals.css`, Recharts |
 
@@ -221,7 +239,7 @@ Only batches with valid token and timing measurements for every worker are compa
 
 In Overview, upload a UTF-8 CSV, JSON array, or JSONL file with `question` and `answer` fields. A CSV template is available in the dashboard. Supply 20–2,000 distinct questions, up to 2 MB. Select exact text matching (case-sensitive, surrounding whitespace ignored) or numeric matching (absolute tolerance 0.000001). Open-ended prose needs a different evaluator and is not supported by these scoring rules.
 
-Every round consumes 20 sequential examples: 10 public benchmark questions and 10 fresh holdout questions. All workers receive the same questions without answer keys. Dataset changes require a new session to keep comparisons consistent. Uploads persist in the configured database and completed-round archives; resetting clears the active dataset but retains archives. Live runs send questions to configured AI providers; demo results remain simulated. This is a local shared workspace without user isolation or authentication.
+Every round consumes one unused batch of questions, 20 by default. All workers receive the same questions without answer keys. Dataset changes require a new session to keep comparisons consistent. Uploads persist in the configured database and completed-round archives; resetting clears the active dataset but retains archives. Live runs send questions to configured AI providers; demo results remain simulated. This is a local shared workspace without user isolation or authentication.
 
 ### Cost per 1,000 tokens
 

@@ -5,12 +5,12 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 scratch = tempfile.TemporaryDirectory()
 os.environ['EXCHANGE_DB'] = str(Path(scratch.name) / 'test.sqlite3')
 os.environ['DATABASE_URL'] = ''
-from backend import main as exchange
+from backend import evaluation, main as exchange
 from fastapi.testclient import TestClient
 
 
@@ -41,12 +41,11 @@ class MarketCheck(unittest.TestCase):
             state = exchange.initial_state()
             state['round'] = 1
             await exchange.benchmark(state)
-            self.assertTrue(all(len(w['answers']) == 10 for w in state['workers']))
+            self.assertTrue(all(len(w['answers']) == evaluation.DEFAULT_BATCH for w in state['workers']))
             await exchange.trading(state)
             self.assertGreater(len(state['trades']), 0)
             spent = {t['name']: sum(o['total'] for o in state['trades'] if o['trader'] == t['name']) for t in state['traders']}
             held = {t['name']: dict(t['holdings']) for t in state['traders']}
-            await exchange.benchmark(state, reveal=True)
             exchange.settle(state)
             for trader in state['traders']:
                 redemption = sum(held[trader['name']].get(w['id'], 0) * (10 + w['score']) for w in state['workers'])
@@ -126,6 +125,7 @@ class MarketCheck(unittest.TestCase):
 
         with patch.object(exchange.asyncio, 'sleep', no_wait), \
              patch.object(exchange.providers, 'readiness', return_value=[]), \
+             patch.object(exchange.providers, 'local_models_ready', AsyncMock()), \
              patch.object(exchange, 'benchmark', benchmark), \
              patch.object(exchange, 'trading', no_operation), \
              patch.object(exchange, 'analyze', no_operation):
@@ -146,8 +146,11 @@ class MarketCheck(unittest.TestCase):
             self.assertEqual(client.post('/api/rounds', json={'mode': 'demo'}).status_code, 409)
             self.assertEqual(client.post('/api/reset').status_code, 409)
             exchange.market['running'] = False
-            with patch.dict(os.environ, {'OPENAI_API_KEY': ''}):
-                self.assertEqual(client.post('/api/rounds', json={'mode': 'live'}).status_code, 400)
+            # Name the providers explicitly so the result does not depend on the developer's .env.
+            with patch.dict(os.environ, dict(WORKER_PROVIDERS='openai,openai,openai', OPENAI_API_KEY='')):
+                response = client.post('/api/rounds', json={'mode': 'live'})
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertIn('OPENAI_API_KEY', response.json()['detail'])
             self.assertEqual(client.post('/api/reset').status_code, 200)
 
     def test_scoring_parser(self):

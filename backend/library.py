@@ -141,8 +141,25 @@ def from_conversion(result, filename, origin='converted'):
 
 
 def from_structured(filename, data):
-    """Import a JSON, JSONL or CSV file that already has question and answer fields; None means it needs parsing."""
+    """Import explicit question/answer data without inference; None means it needs parsing."""
     suffix = Path(filename).suffix.lower()
+    if suffix in ('.txt', '.md'):
+        try:
+            text = data.decode('utf-8-sig').strip()
+        except UnicodeError:
+            return None
+        # Require every nonblank line to belong to a labeled pair; prose still needs inference.
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if not lines or len(lines) % 2:
+            return None
+        examples = []
+        for i in range(0, len(lines), 2):
+            question = re.fullmatch(r'(?:Q|Question):[ \t]*(.+)', lines[i], re.IGNORECASE)
+            answer = re.fullmatch(r'(?:A|Answer):[ \t]*(.+)', lines[i + 1], re.IGNORECASE)
+            if not question or not answer:
+                return None
+            examples.append(dict(question=question[1], answer=answer[1], answer_source='document'))
+        return from_conversion(dict(examples=examples), filename, origin='uploaded')
     if suffix not in ('.json', '.jsonl', '.csv'):
         return None
     try:

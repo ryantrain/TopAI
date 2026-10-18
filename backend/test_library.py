@@ -31,6 +31,7 @@ def office_file(entries):
 
 class LibraryCheck(unittest.TestCase):
     def setUp(self):
+        exchange.worksheets.clear()
         exchange.market.clear()
         exchange.market.update(exchange.initial_state())
 
@@ -100,7 +101,7 @@ class LibraryCheck(unittest.TestCase):
             uploaded = client.post('/api/dataset?filename=niche.json', content=json.dumps(examples('U', 40)))
             self.assertEqual(uploaded.status_code, 200)
             file_id = exchange.market['selection'][0]
-            self.assertEqual(exchange.market['library'][0]['origin'], 'uploaded')
+            self.assertEqual(exchange.worksheets[0]['origin'], 'uploaded')
             exchange.market['round'] = 1
             self.assertEqual(client.put('/api/library/selection', json={'ids': []}).status_code, 409)
             self.assertEqual(client.delete(f'/api/library/{file_id}').status_code, 409)
@@ -108,8 +109,8 @@ class LibraryCheck(unittest.TestCase):
             self.assertFalse(response.json()['selected'])
             self.assertEqual(exchange.market['selection'], [file_id])
             self.assertEqual(client.post('/api/reset').status_code, 200)
-            self.assertEqual((len(exchange.market['library']), exchange.market['selection'], exchange.market['dataset']), (2, [], None))
-            self.assertEqual(exchange.restore()['library'][1]['id'], file_id)
+            self.assertEqual((len(exchange.worksheets), exchange.market['selection'], exchange.market['dataset']), (2, [], None))
+            self.assertEqual(exchange.storage.read_local(exchange.WORKSHEETS)[1]['id'], file_id)
 
     def test_quota_errors_explain_when_to_retry(self):
         import httpx
@@ -133,7 +134,7 @@ class LibraryCheck(unittest.TestCase):
             response, gemini = send(client, 'set.json', json.dumps(dict(name='Kept', tolerance=0.5, examples=examples('J', 20))))
             self.assertEqual(response.status_code, 200)
             gemini.assert_not_called()
-            entry = exchange.market['library'][0]
+            entry = exchange.worksheets[0]
             self.assertEqual((entry['name'], entry['count'], entry['scoring'], entry['tolerance']), ('Kept', 20, 'numeric', 0.5))
             response, gemini = send(client, 'rows.jsonl', '\n'.join(json.dumps(r) for r in examples('L', 3, lambda i: f'word {i}')))
             gemini.assert_not_called()
@@ -148,6 +149,51 @@ class LibraryCheck(unittest.TestCase):
             response, gemini = send(client, 'other.json', json.dumps({'items': [{'prompt': 'Name a prime', 'solution': 7}]}), reply)
             gemini.assert_called_once()
             self.assertEqual(send(client, 'empty.json', json.dumps([{'question': '', 'answer': ''}]))[0].status_code, 422)
+
+    def test_labeled_questions_import_without_a_model(self):
+        text = 'Q: What is 2 + 2?\nA: 4\n\nQuestion: Capital of France?\nAnswer: Paris\n'
+        with TestClient(exchange.app) as client, patch.object(exchange, 'ask', AsyncMock()) as model:
+            response = client.post('/api/library/convert', json=dict(filename='custom.txt', data=base64.b64encode(text.encode()).decode()))
+        self.assertEqual(response.status_code, 200, response.text)
+        model.assert_not_called()
+        entry = exchange.worksheets[0]
+        self.assertEqual((entry['count'], entry['model_answers']), (2, 0))
+        self.assertEqual([p['answer'] for p in entry['problems']], ['4', 'Paris'])
+        for content in ('# Extra instructions\n' + text, text + 'Q: Missing answer', 'Q: Missing answer'):
+            self.assertIsNone(library.from_structured('custom.md', content.encode()))
+
+    def test_worksheet_content_never_reaches_the_database(self):
+        async def no_wait(_):
+            pass
+
+        async def no_operation(state):
+            pass
+
+        with TestClient(exchange.app) as client:
+            self.convert(client, dict(name='Private', examples=examples('Secret', 24)))
+            with patch.object(exchange.asyncio, 'sleep', no_wait), patch.object(exchange, 'trading', no_operation), patch.object(exchange, 'analyze', no_operation):
+                import asyncio
+                async def run():
+                    await exchange.start_round(exchange.StartRequest(mode='demo', rounds=1))
+                    await exchange.task
+                asyncio.run(run())
+        self.assertEqual(exchange.market['phase'], 'complete')
+        self.assertIn('Secret question', json.dumps(exchange.market))
+        # Both the active market row and the completed-round archive are free of worksheet text.
+        with exchange.storage.connection(exchange.DB) as (db, _, _postgres):
+            stored = [row[0] for row in db.execute('SELECT state FROM exchange_market').fetchall()] + \
+                     [row[0] for row in db.execute('SELECT data FROM exchange_rounds').fetchall()]
+        self.assertTrue(stored)
+        self.assertTrue(all('Secret question' not in row for row in stored))
+        self.assertTrue(all('library' not in json.loads(row) for row in stored))
+        # The local files keep everything, so a restart restores questions and answers.
+        self.assertEqual(oct(os.stat(exchange.WORKSHEETS).st_mode & 0o777), '0o600')
+        restored = exchange.restore()
+        self.assertEqual(len(restored['dataset']['problems']), 24)
+        self.assertIn('Secret question', restored['workers'][0]['answers'][0]['question'])
+        # Without the local market copy, questions are rebuilt from the saved worksheets.
+        os.remove(exchange.LOCAL_MARKET)
+        self.assertEqual(len(exchange.restore()['dataset']['problems']), 24)
 
 
 if __name__ == '__main__':

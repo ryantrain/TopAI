@@ -29,7 +29,7 @@ class LatexMathCheck(unittest.TestCase):
                 plan = response.json()['benchmark_plan']
                 self.assertEqual(plan['method'], 'rubric')
                 self.assertIn('integration constant', plan['rubric'])
-                self.assertIn('judge_model', plan)
+                self.assertEqual(plan['evaluator'], dict(provider='gemini', model=exchange.providers.model_for('gemini')))
                 self.assertEqual(exchange.restore()['dataset']['benchmark_plan'], plan)
                 self.assertEqual(json.loads(plan['execution_spec'])['method'], 'rubric')
 

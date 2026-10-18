@@ -1,4 +1,7 @@
 """Small JSON-only adapters. Provider credentials never enter market state."""
+import base64
+import asyncio
+import io
 import json
 import math
 import os
@@ -8,6 +11,7 @@ import httpx
 
 KEYS = {'openai': 'OPENAI_API_KEY', 'gemini': 'GEMINI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'ollama': None}
 DEFAULT_MODELS = {'openai': 'gpt-4.1-mini', 'gemini': 'gemini-3.8-flash', 'anthropic': 'claude-sonnet-4-6', 'ollama': 'qwen2.5:7b'}
+local_inference_lock = asyncio.Lock()
 
 
 def model_for(provider):
@@ -24,18 +28,17 @@ def configuration():
             raise ValueError
     except ValueError:
         raise ValueError('WORKER_COST_PER_1K_TOKENS must contain three nonnegative USD rates or blank entries') from None
-    trader = os.getenv('TRADER_PROVIDER', 'gemini').strip().lower()
-    analyst = os.getenv('ANALYST_PROVIDER', 'gemini').strip().lower()
-    if len(workers) != 3 or any(p not in KEYS for p in workers + [trader, analyst]):
-        raise ValueError('Choose exactly three WORKER_PROVIDERS and supported trader/analyst providers: openai, gemini, anthropic, ollama')
-    return dict(cost_per_1k_tokens=rates, workers=[dict(provider=p, model=models[i] if i < len(models) and models[i] else model_for(p)) for i, p in enumerate(workers)],
-                trader=dict(provider=trader, model=os.getenv('TRADER_MODEL') or model_for(trader)),
-                analyst=dict(provider=analyst, model=os.getenv('ANALYST_MODEL') or model_for(analyst)))
+    if len(workers) != 3 or any(p not in KEYS for p in workers):
+        raise ValueError('Choose exactly three WORKER_PROVIDERS: openai, gemini, anthropic, ollama')
+    # Traders and the analyst are seeded, so only the workers and the evaluator need a provider.
+    return dict(cost_per_1k_tokens=rates, evaluator=dict(provider='gemini', model=model_for('gemini')),
+                workers=[dict(provider=p, model=models[i] if i < len(models) and models[i] else model_for(p)) for i, p in enumerate(workers)])
 
 
 def readiness(config):
-    providers = {s['provider'] for s in config['workers'] + [config['trader'], config['analyst']]}
-    return [KEYS[p] for p in sorted(providers) if KEYS[p] and not os.getenv(KEYS[p])]
+    # Gemini can use local Ollama without a cloud key.
+    providers = {s['provider'] for s in config['workers'] + [config['evaluator']]}
+    return [KEYS[p] for p in sorted(providers) if p != 'gemini' and KEYS[p] and not os.getenv(KEYS[p])]
 
 
 def parse_object(raw):
@@ -57,8 +60,10 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
     if attachment and provider != 'gemini':
         raise ValueError('File attachments are only supported for Gemini')
     if provider == 'ollama':
-        return await ask_local(prompt, instruction, model or model_for(provider), with_usage, schema)
+        return await ask_local(prompt, instruction, model or model_for(provider), with_usage, schema, max_tokens=max_tokens, timeout=timeout)
     key = os.getenv(KEYS[provider])
+    if not key and provider == 'gemini':
+        return await gemini_fallback(prompt, instruction, with_usage, schema, attachment, max_tokens, timeout)
     if not key:
         raise ValueError(f'Missing {KEYS[provider]}')
     model = model or model_for(provider)
@@ -88,6 +93,8 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
                       'contents': [{'role': 'user', 'parts': ([{'inline_data': attachment}] if attachment else []) + [{'text': prompt}]}],
                       'generationConfig': {'responseMimeType': 'application/json', 'maxOutputTokens': max_tokens}},
             )
+            if response.status_code == 429:
+                return await gemini_fallback(prompt, instruction, with_usage, schema, attachment, max_tokens, timeout)
             response.raise_for_status()
             data = response.json()
             total_tokens = data.get('usageMetadata', {}).get('totalTokenCount')
@@ -115,6 +122,27 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
     return result
 
 
+async def gemini_fallback(prompt, instruction, with_usage, schema, attachment, max_tokens=8192, timeout=90):
+    images = None
+    if attachment:
+        if attachment['mime_type'] == 'application/pdf':
+            from pypdf import PdfReader
+            try:
+                reader = PdfReader(io.BytesIO(base64.b64decode(attachment['data'])))
+                text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+            except Exception as error:
+                raise ValueError('Could not extract PDF text for local Ollama.') from error
+            if not text.strip():
+                raise ValueError('This PDF has no readable text. Upload page images with a local vision model, or restore Gemini access.')
+            prompt += '\n\n' + text[:500_000]
+        elif attachment['mime_type'].startswith('image/'):
+            images = [attachment['data']]
+        else:
+            raise ValueError('Local fallback does not support this file type.')
+    print('Gemini unavailable (missing key or rate limit); using local Ollama.', flush=True)
+    return await ask_local(prompt, instruction, model_for('ollama'), with_usage, schema, images=images, max_tokens=max_tokens, timeout=timeout)
+
+
 async def local_models_ready(models):
     if any(not model or 'cloud' in model.lower() for model in models):
         raise ValueError('Choose installed local Ollama models, without cloud routing.')
@@ -127,14 +155,18 @@ async def local_models_ready(models):
         raise ValueError('Download these local Ollama models first: ' + ', '.join(sorted(missing)))
 
 
-async def ask_local(prompt, instruction, model, with_usage=False, schema=None):
+async def ask_local(prompt, instruction, model, with_usage=False, schema=None, images=None, max_tokens=8192, timeout=90):
     if not model or 'cloud' in model.lower():
         raise ValueError('Choose an installed local Ollama model, without cloud routing.')
-    async with httpx.AsyncClient(timeout=300, trust_env=False) as client:
+    # One local accelerator: queued requests must not spend their inference timeout waiting for a slot.
+    async with local_inference_lock, asyncio.timeout(timeout), httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         response = await client.post('http://127.0.0.1:11434/api/chat', json={
-            'model': model, 'stream': False, 'format': schema if schema is not None else 'json', 'options': {'temperature': 0, 'num_predict': 8192},
+            # Thinking models can spend the entire JSON response budget on hidden reasoning.
+            'think': False,
+            'model': model, 'stream': False, 'keep_alive': '15m',
+            'format': schema if schema is not None else 'json', 'options': {'temperature': 0, 'num_predict': max_tokens},
             'messages': [{'role': 'system', 'content': instruction + ' Return only valid JSON.'},
-                         {'role': 'user', 'content': prompt}],
+                         {'role': 'user', 'content': prompt, **({'images': images} if images else {})}],
         })
         response.raise_for_status()
         data = response.json()

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.test_market import exchange
-from backend import providers, receipts, storage
+from backend import evaluation, providers, receipts, storage
 import httpx
 
 
@@ -35,12 +35,12 @@ class IntegrationCheck(unittest.TestCase):
                 providers.parse_object(raw)
         self.assertEqual(providers.parse_object('```json\n{"score": 3}\n```'), {'score': 3})
 
-    def test_live_workers_and_traders_route_without_ground_truth(self):
+    def test_live_workers_route_without_ground_truth_and_traders_make_no_calls(self):
         async def check():
             state = exchange.initial_state()
             state.update(mode='live', round=1, configuration={
                 'workers': [dict(provider=p, model=f'{p}-test') for p in ('openai', 'gemini', 'anthropic')],
-                'trader': dict(provider='gemini', model='gemini-test'), 'analyst': dict(provider='gemini', model='gemini-test')})
+                'evaluator': dict(provider='gemini', model='gemini-test')})
             problems = [dict(question=f'Question {i}?', answer=987654) for i in range(10)]
             worker_mock = AsyncMock(return_value={'answers': [987654] * 10, '_total_tokens': 500})
             with patch.object(exchange, 'gsm8k_problems', return_value=problems), patch.object(exchange, 'ask', worker_mock):
@@ -51,22 +51,25 @@ class IntegrationCheck(unittest.TestCase):
             self.assertTrue(all(w['scores'][0]['total_tokens'] == 500 for w in state['workers']))
             self.assertTrue(all(w['scores'][0]['elapsed_seconds'] > 0 for w in state['workers']))
             self.assertTrue(all(w['scores'][0]['correct'] == 10 for w in state['workers']))
+            # Traders are seeded now: a live round must not spend a single token on them.
             trader_mock = AsyncMock(return_value={'orders': [], 'reason': 'Waiting for a better entry.'})
             with patch.object(exchange, 'ask', trader_mock):
                 await exchange.trading(state)
-            calls = trader_mock.call_args_list
-            self.assertEqual(len(calls), 5)
-            self.assertTrue(all(c.kwargs['provider'] == 'gemini' for c in calls))
-            snapshots = [json.loads(c.args[0])['workers'] for c in calls]
+            trader_mock.assert_not_called()
+            self.assertTrue(all(t['provider'] == 'simulated' for t in state['traders']))
+            snapshots = [[{k: w.get(k) for k in ('id', 'price', 'scores')} for w in state['workers']]]
             self.assertTrue(all(s == snapshots[0] for s in snapshots))
             self.assertNotIn('answers', json.dumps(snapshots))
             self.assertNotIn('987654', json.dumps(snapshots))
             exchange.settle(state)
             before = copy.deepcopy(state['traders'])
-            with patch.object(exchange, 'ask', AsyncMock(side_effect=ValueError('unavailable'))):
-                await exchange.analyze(state)
+            # The summary is a template now, so it makes no call and always produces text.
+            with patch.object(exchange, 'ask', AsyncMock(side_effect=ValueError('unavailable'))) as unused:
+                exchange.analyze(state)
+            unused.assert_not_called()
             self.assertEqual(state['traders'], before)
-            self.assertIsNone(state['analysis']['summary'])
+            self.assertIn('led the round', state['analysis']['summary'])
+            self.assertEqual(state['analysis']['provider'], 'simulated')
         asyncio.run(check())
 
     def test_demo_measurements_are_seeded_and_archivable(self):
@@ -78,7 +81,7 @@ class IntegrationCheck(unittest.TestCase):
         for a, b in zip(first['workers'], second['workers']):
             sample = a['scores'][0]
             self.assertEqual(sample, b['scores'][0])
-            self.assertEqual(sample['attempted'], 10)
+            self.assertEqual(sample['attempted'], evaluation.DEFAULT_BATCH)
             self.assertGreater(sample['total_tokens'], 0)
             self.assertGreater(sample['elapsed_seconds'], 0)
             self.assertEqual(sample['correct'], sum(answer['correct'] for answer in a['answers']))
@@ -87,8 +90,11 @@ class IntegrationCheck(unittest.TestCase):
     def test_readiness_and_configuration(self):
         with patch.dict(os.environ, {}, clear=True):
             config = providers.configuration()
-            self.assertEqual(config['trader']['provider'], 'gemini')
-            self.assertEqual(providers.readiness(config), ['GEMINI_API_KEY', 'OPENAI_API_KEY'])
+            # Traders and the analyst have no provider any more; the evaluator is always Gemini.
+            self.assertNotIn('trader', config)
+            self.assertNotIn('analyst', config)
+            self.assertEqual(config['evaluator'], dict(provider='gemini', model=providers.model_for('gemini')))
+            self.assertEqual(providers.readiness(config), ['OPENAI_API_KEY'])
             os.environ['WORKER_PROVIDERS'] = 'openai,invalid,gemini'
             with self.assertRaises(ValueError):
                 providers.configuration()

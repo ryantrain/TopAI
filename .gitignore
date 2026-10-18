@@ -7,3 +7,5 @@ __pycache__/
 .env.local
 backend/gsm8k.jsonl
 .codebase-memory/
+*.local.json
+*.local.json.tmp
