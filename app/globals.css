@@ -27,6 +27,9 @@ button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #334
 .primary-button:hover:not(:disabled){transform:none;box-shadow:none}
 .primary-button:active:not(:disabled){transform:none}
 .worker-card{min-height:214px}
+.bot-avatar.agent-art{position:relative;width:58px;height:52px;overflow:hidden;background:#fafafa;border-color:#e5e7eb;flex:none}
+.agent-art .agent-img{position:absolute;inset:2%;width:96%;height:96%;object-fit:contain;mix-blend-mode:multiply;user-select:none}
+.agent-art .agent-img.gif{inset:-10%;width:120%;height:120%;object-fit:cover}
 .worker-card:focus-visible{outline:2px solid #334155;outline-offset:3px}
 .worker-card:hover{transform:none;box-shadow:none}
 .session-strip button:hover:not(:disabled),.text-button:hover,.activity-all:hover{color:#334155}
