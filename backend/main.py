@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -267,8 +267,24 @@ async def get_session():
 
 
 @app.get('/api/history')
-async def get_history():
-    return await asyncio.to_thread(storage.history, DB)
+async def get_history(offset: int = Query(default=0, ge=0), limit: int = Query(default=30, ge=1, le=100)):
+    return await asyncio.to_thread(storage.history, DB, offset, limit)
+
+
+@app.get('/api/history/{session_id}/{round_number}')
+async def get_history_entry(session_id: str, round_number: int):
+    state = await asyncio.to_thread(storage.history_entry, DB, session_id, round_number)
+    if state is None:
+        raise HTTPException(404, 'Saved quiz not found')
+    return state
+
+
+@app.delete('/api/history/{session_id}/{round_number}')
+async def delete_history_entry(session_id: str, round_number: int):
+    deleted = await asyncio.to_thread(storage.delete_history, DB, session_id, round_number)
+    if not deleted:
+        raise HTTPException(404, 'Saved quiz not found')
+    return {'status': 'deleted'}
 
 
 @app.post('/api/rounds', status_code=202)
@@ -486,23 +502,23 @@ async def convert_file(request: ConvertRequest):
         raise HTTPException(422, str(error)) from None
     if entry:
         return save_converted(entry)
-    # Worksheets are parsed with Gemini behind the scenes; setup details go to the server log, not the page.
-    if not os.getenv('GEMINI_API_KEY'):
-        print('Worksheet upload failed: set GEMINI_API_KEY in .env and restart the backend.', flush=True)
-        raise HTTPException(503, 'Worksheet uploads are not available right now.')
+    provider = 'ollama'
     try:
         text, attachment = library.document_input(request.filename, request.mime_type, data)
+        provider = 'gemini' if attachment else 'ollama'
+        if attachment and not os.getenv('GEMINI_API_KEY'):
+            raise HTTPException(503, 'PDF and image uploads require Gemini. Upload a text or Office document to parse locally.')
         prompt = f'File name: {request.filename}\n\n' + (text or 'The document is attached.')
-        result = await ask(prompt, library.CONVERT_INSTRUCTION, model=os.getenv('GEMINI_CONVERT_MODEL') or None,
-                           provider='gemini', attachment=attachment, max_tokens=32768, timeout=280)
+        result = await ask(prompt, library.CONVERT_INSTRUCTION, model=(os.getenv('GEMINI_CONVERT_MODEL') or None) if attachment else providers.model_for('ollama'),
+                           provider=provider, attachment=attachment, max_tokens=32768, timeout=280)
         entry = library.from_conversion(result, request.filename)
     except httpx.HTTPStatusError as error:
-        if error.response.status_code == 429:
+        if provider == 'gemini' and error.response.status_code == 429:
             raise HTTPException(429, quota_message(error.response)) from None
-        print(f'Worksheet upload failed: Gemini returned HTTP {error.response.status_code}.', flush=True)
+        print(f'Worksheet upload failed: {provider} returned HTTP {error.response.status_code}.', flush=True)
         raise HTTPException(502, 'This worksheet could not be read right now. Try again shortly.') from None
     except httpx.HTTPError:
-        print('Worksheet upload failed: could not reach Gemini.', flush=True)
+        print(f'Worksheet upload failed: could not reach {provider}.', flush=True)
         raise HTTPException(502, 'This worksheet could not be read right now. Try again shortly.') from None
     except ValueError as error:
         raise HTTPException(422, str(error)) from None

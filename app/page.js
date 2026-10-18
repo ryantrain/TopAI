@@ -114,12 +114,6 @@ export default function ClassroomPage() {
 
   return <div className="shell">
     <Sidebar>
-      <dl className="session">
-        <div><dt>Worksheet</dt><dd>{session?.dataset ? `${session.dataset.name} · ${session.dataset.count} q` : 'None selected'}</dd></div>
-        <div><dt>Run</dt><dd>{step === 0 ? (session?.live_available ? `${agents.length} API agents ready` : 'Demo fallback ready') : liveRun ? 'API agents' : 'Demo fallback'}</dd></div>
-        <div><dt>Judge</dt><dd>{judgeLabel}</dd></div>
-        <div><dt>Quizzes done</dt><dd>{session?.round || 0}</dd></div>
-      </dl>
       <button type="button" className="sidebar-button" onClick={newClass} disabled={!session || session.running || busy}><RotateCcw size={14}/>New class</button>
     </Sidebar>
 

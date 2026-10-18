@@ -86,7 +86,7 @@ Evaluation follows a separate priority:
 2. If Gemini is not configured or its request fails and `OPENAI_API_KEY` is present: OpenAI judges them.
 3. If neither cloud judge succeeds: `OLLAMA_MODEL` judges locally.
 
-Ollama always drafts benchmark plans. Structured CSV/JSON imports need no conversion model. PDF, photo, Word, Excel, PowerPoint, and text worksheet conversion uses Gemini, with `GEMINI_CONVERT_MODEL` falling back to `GEMINI_MODEL`.
+Ollama always drafts benchmark plans. Structured CSV/JSON imports need no conversion model. Text, Word, Excel, and PowerPoint worksheet parsing uses local Ollama without an API key. PDF and photo conversion uses Gemini, with `GEMINI_CONVERT_MODEL` falling back to `GEMINI_MODEL`.
 
 ## Use the integral benchmark
 
@@ -129,6 +129,8 @@ Demo timing and token counts are seeded simulation values. Evaluator latency and
 
 SQLite is the default. Set `DATABASE_URL` to a TigerData/PostgreSQL connection string to store active state and completed-quiz archives remotely. Changing storage backends does not migrate existing history.
 
+Open **Run history** in the sidebar to browse saved quizzes, including previous classes. Each completed quiz is stored in `benchmark_quizzes` with its session ID, quiz number, timestamp, and JSON snapshot of the dataset, benchmark plan, model configuration, answers, grades, token usage, and timing. View results to inspect the saved comparison and marked answers. Older results are paginated; a new class does not delete them. Failed quizzes roll back and are not archived as completed results.
+
 Uploaded worksheet source files remain in owner-only local storage. Cloud workers receive benchmark questions. The active cloud judge receives questions, worker answers, references, and criteria. When neither cloud judge is configured or succeeds, Ollama evaluation stays on the local machine. Remove unnecessary personal information from student material before using cloud services.
 
 ## API and verification
@@ -140,10 +142,12 @@ Important routes:
 - `POST /api/library/convert` and `PUT /api/library/selection` — import and select worksheets
 - `POST /api/rounds` — run 1–10 quizzes
 - `POST /api/reset` — start a new session
-- `GET /api/history` — archived quizzes
+- `GET /api/history?offset=0&limit=30` — paginated archived quiz summaries
+- `GET /api/history/{session_id}/{round_number}` — saved quiz results
+- `DELETE /api/history/{session_id}/{round_number}` — remove one saved quiz and clear its archived snapshot; retain an identity marker so it cannot reappear. Current class results and other cumulative snapshots stay unchanged.
 
 ```bash
-.venv/bin/python -m unittest backend.test_session backend.test_integrations backend.test_datasets backend.test_evaluation -v
+.venv/bin/python -m unittest backend.test_history backend.test_session backend.test_integrations backend.test_datasets backend.test_evaluation -v
 node app/api-response.test.mjs
 node app/model-metrics.test.mjs
 npm run build

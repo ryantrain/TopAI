@@ -125,7 +125,7 @@ class LibraryCheck(unittest.TestCase):
 
     def test_structured_files_skip_parsing_and_text_files_are_parsed(self):
         def send(client, filename, content, reply=None):
-            with patch.dict(os.environ, {'GEMINI_API_KEY': 'test-key'}), patch.object(exchange, 'ask', AsyncMock(return_value=reply)) as gemini:
+            with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': ''}), patch.object(exchange, 'ask', AsyncMock(return_value=reply)) as gemini:
                 response = client.post('/api/library/convert', json=dict(filename=filename, data=base64.b64encode(content.encode()).decode()))
             return response, gemini
 
@@ -143,6 +143,8 @@ class LibraryCheck(unittest.TestCase):
             self.assertEqual(response.json()['entry']['count'], 2)
             reply = dict(name='Notes', examples=examples('M', 2))
             response, gemini = send(client, 'notes.md', '# Quiz\n1. What is 2 + 2?', reply)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(gemini.call_args.kwargs['provider'], 'ollama')
             self.assertIn('# Quiz', gemini.call_args.args[0])
             self.assertIsNone(gemini.call_args.kwargs['attachment'])
             response, gemini = send(client, 'other.json', json.dumps({'items': [{'prompt': 'Name a prime', 'solution': 7}]}), reply)
