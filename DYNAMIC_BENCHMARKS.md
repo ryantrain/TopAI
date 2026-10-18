@@ -6,8 +6,8 @@ A dataset contains questions and trusted reference answers. A benchmark plan rec
 
 1. The user uploads or selects worksheets containing at least 10 distinct questions.
 2. The user describes the task in plain language.
-3. Local Ollama drafts an editable execution plan: instructions, scoring method, tolerance, pass threshold, selection order, and repetitions.
-4. The user reviews and saves that plan.
+3. The first send action requires local Ollama to draft an editable execution plan: instructions, scoring method, tolerance, pass threshold, selection order, and repetitions.
+4. The user reviews that plan and sends again to save it and start the class.
 5. One to six configured API or local agents answer the same 10 questions concurrently. If their provider configuration is incomplete, the app uses three seeded demo agents.
 6. Gemini judges each agent's completed answer batch when configured. If Gemini is unavailable, OpenAI is tried next, then local Ollama. Item counting stays deterministic in Python.
 7. Python stores the judge verdicts and updates the accuracy, speed, token, cost, and overall-score graphs.

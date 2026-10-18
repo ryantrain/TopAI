@@ -44,20 +44,25 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
   useEffect(() => {
     if (dataset?.scoring && !dataset.benchmark_plan && !drafted) setPlan(p => ({ ...p, method: dataset.scoring, tolerance: dataset.tolerance ?? p.tolerance }));
   }, [dataset?.digest, dataset?.scoring, dataset?.tolerance, dataset?.benchmark_plan, drafted]);
+  useEffect(() => { setDrafted(false); }, [dataset?.digest]);
   useEffect(() => { if (maxRounds > 0 && rounds > maxRounds) setRounds(maxRounds); }, [maxRounds, rounds]);
   useEffect(() => {
     const el = textarea.current;
     if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; }
   }, [plan.goal]);
 
-  const change = (key, value) => setPlan(p => ({ ...p, [key]: value }));
+  const change = (key, value) => {
+    setPlan(p => ({ ...p, [key]: value }));
+    if (key === 'goal') setDrafted(false);
+  };
 
   async function draft() {
     setDrafting(true); onError('');
     try {
       const data = await readApiResponse(await fetch('/api/benchmark/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: plan.goal }) }));
       setPlan({ ...BLANK_PLAN, ...data, goal: plan.goal }); setDrafted(true); setDetails(true);
-    } catch (e) { onError(e.message); setDetails(true); }
+      return true;
+    } catch (e) { onError(e.message); setDetails(true); return false; }
     finally { setDrafting(false); }
   }
 
@@ -83,9 +88,10 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
   const canSend = step === 2 ? !!plan.goal.trim() && !busy
     : step === 0 && !!plan.goal.trim() && !!session && !busy && !uploading && !drafting && !tooSmall;
 
-  function send() {
+  async function send() {
     if (!canSend) return;
     if (step === 2) { onNewTask(); return; }
+    if (!drafted) { await draft(); return; }
     onStart({ rounds, plan: dataset ? plan : null });
   }
 
@@ -94,16 +100,21 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
     : uploading ? uploading
     : tooSmall ? `Selected worksheets have ${dataset?.count ?? selectedCount} questions; a quiz needs 10. Add or tick more worksheets.`
     : !dataset ? 'Add or select a worksheet with at least 10 questions before starting.'
-    : session?.live_available
-      ? `${agentCount} configured API ${agentCount === 1 ? 'agent is' : 'agents are'} ready. ${judge} compares answers with your key.`
-      : `${session?.workers?.length || 3} simulated agents are ready because the API agent setup is incomplete. ${judge} compares answers with your key.`;
+    : !drafted ? 'Press send to build benchmark metrics with local Ollama. Review them, then press send again to start.'
+    : `Ollama benchmark ready. Review the marking details, then press send to start ${rounds} ${rounds === 1 ? 'quiz' : 'quizzes'}.`;
 
   return <div className="composer-wrap">
+    {drafting && step === 0 && <div className="planner-screen" role="status" aria-live="polite">
+      <Loader2 size={22} className="spin"/>
+      <div><strong>Building benchmark metrics with Ollama</strong><p>Reading your task and worksheet, then choosing the marking method and criteria.</p></div>
+    </div>}
     {details && step === 0 && <div className="composer-details">
       <div className="details-head"><strong>Marking details</strong><button type="button" className="icon-button" aria-label="Close marking details" onClick={() => setDetails(false)}><X size={15}/></button></div>
-      {drafted && <p className="muted">Drafted from your task. Check it before you start.</p>}
+      {drafted && <p className="muted">Ollama built these metrics from your request. Review them, then press send again to start.</p>}
       {plan.unsupported_requirements?.length > 0 && <div className="unsupported"><strong>Not measured by this setup</strong><ul>{plan.unsupported_requirements.map(r => <li key={r}>{r}</li>)}</ul></div>}
       <div className="details-grid">
+        <label>Evaluate using<select value={plan.method} onChange={e => change('method', e.target.value)}>{Object.entries(METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+        {plan.method === 'numeric' && <label>Allowed error<input type="number" min="0" step="any" value={plan.tolerance} onChange={e => change('tolerance', e.target.value === '' ? '' : Number(e.target.value))}/></label>}
         <label>Instructions every agent gets<textarea rows={3} maxLength={8000} value={plan.instructions} onChange={e => change('instructions', e.target.value)} placeholder="Answer format and requirements. Never include the answer key."/></label>
         {plan.method === 'rubric' && <label>Rubric for the judge<textarea rows={3} maxLength={8000} value={plan.rubric} onChange={e => change('rubric', e.target.value)} placeholder="What a passing answer includes."/></label>}
         {plan.method === 'rubric' && <label>Passing score / 100<input type="number" min="1" max="100" value={plan.pass_score} onChange={e => change('pass_score', e.target.value === '' ? '' : Number(e.target.value))}/></label>}
@@ -120,7 +131,7 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
       <label className="chip" title="Ask each agent every question this many times to check consistency">Repeats<select value={plan.repetitions ?? 1} onChange={e => change('repetitions', Number(e.target.value))}>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}×</option>)}</select></label>
       <label className="chip">Quizzes<select value={rounds} onChange={e => setRounds(Number(e.target.value))}>{Array.from({ length: Math.max(1, Math.min(10, maxRounds)) }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
       <button type="button" className="chip action" onClick={() => setDetails(v => !v)} aria-expanded={details}><SlidersHorizontal size={13}/>Details</button>
-      <button type="button" className="chip action" onClick={draft} disabled={!plan.goal.trim() || drafting}>{drafting ? <Loader2 size={13} className="spin"/> : <Wand2 size={13}/>}Suggest marking</button>
+      <button type="button" className="chip action" onClick={draft} disabled={!plan.goal.trim() || drafting}>{drafting ? <Loader2 size={13} className="spin"/> : <Wand2 size={13}/>} {drafted ? 'Rebuild marking' : 'Suggest marking'}</button>
     </div>}
 
     <div className={`composer ${locked ? 'locked' : ''}`}>
@@ -131,7 +142,7 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
         <Plus size={17}/><span className="sr-only">Add worksheets</span>
         <input ref={fileInput} type="file" multiple disabled={step !== 0 || !!uploading || busy} onChange={e => upload([...(e.target.files || [])])}/>
       </label>
-      <button type="button" className="round-button send" onClick={send} disabled={!canSend} aria-label={step === 2 ? 'Start a new class' : 'Start class'}>
+      <button type="button" className="round-button send" onClick={send} disabled={!canSend} aria-label={step === 2 ? 'Start a new class' : drafted ? 'Start class' : 'Build benchmark metrics'}>
         {busy || locked ? <Loader2 size={17} className="spin"/> : <ArrowUp size={17}/>}
       </button>
     </div>

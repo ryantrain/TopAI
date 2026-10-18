@@ -198,6 +198,10 @@ tr.top td { background: #f8f7f3; }
 .round-button.send:hover:not(:disabled) { background: var(--navy-hover); }
 .composer-note { margin-top: 6px; padding-left: 18px; font-size: 12px; color: var(--muted); }
 .composer-details { margin-bottom: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 12px 30px -20px rgba(0,0,0,.35); }
+.planner-screen { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 12px 30px -20px rgba(0,0,0,.35); }
+.planner-screen svg { flex: none; color: var(--accent); }
+.planner-screen strong { display: block; font-size: 14px; }
+.planner-screen p { margin-top: 3px; color: var(--ink-2); font-size: 12px; line-height: 1.45; }
 .details-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .icon-button { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; color: var(--muted); }
 .icon-button:hover { background: var(--bg); }

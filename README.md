@@ -92,9 +92,9 @@ Ollama always drafts benchmark plans. Structured CSV/JSON imports need no conver
 
 1. Add or select worksheets totaling at least 10 questions.
 2. Describe the task, such as `Find the best agent for first-year indefinite integrals.`
-3. Click **Suggest marking** and review the generated instructions and rubric.
-4. Choose the marking method and number of quizzes.
-5. Start the class. The app selects API agents or the demo fallback automatically.
+3. Press send. The app requires local Ollama to build benchmark metrics from the request before any quiz can start.
+4. Review the generated method, instructions, rubric, and number of quizzes.
+5. Press send again to start the class. The app selects API agents or the demo fallback automatically.
 6. Inspect the recommendation, result table, chart, and marked answers.
 
 A structured dataset can be a CSV, JSON array, JSONL file, or JSON envelope:

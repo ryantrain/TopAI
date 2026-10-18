@@ -15,8 +15,8 @@ Integral mathematics is the reference use case. The same benchmark plan supports
 ## Core journey
 
 1. The user adds worksheets and describes the task in plain language.
-2. Local Ollama drafts an editable benchmark plan with instructions, scoring method, tolerance, and pass threshold.
-3. The user reviews and saves the plan.
+2. The first send action requires local Ollama to draft an editable benchmark plan with instructions, scoring method, tolerance, and pass threshold.
+3. The user reviews the generated plan and sends again to save it and start the class.
 4. The app detects one to six configured agents and their required keys. A complete setup uses those agents; an incomplete setup falls back to three seeded simulated agents.
 5. Every agent receives the same 10 questions concurrently without reference answers.
 6. Gemini grades each completed batch when configured. If it is absent or fails, OpenAI grades it when configured; local Ollama is the final fallback. Deterministic item counting remains in Python.
