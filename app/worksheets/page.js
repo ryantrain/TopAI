@@ -101,7 +101,7 @@ export default function WorksheetsPage() {
         <section className="worksheet-list" aria-labelledby="saved-title">
           <div className="section-row">
             <div><h2 id="saved-title">Your worksheets</h2>
-              <p>{selection.length ? `${count} questions selected · ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'round' : 'rounds'} available${count < 20 ? ` · add ${20 - count} more questions to run` : ''}` : 'None selected yet: tick at least one worksheet to start a class.'}</p></div>
+              <p>{selection.length ? `${count} questions selected · enough for ${Math.floor(count / 20)} ${Math.floor(count / 20) === 1 ? 'round' : 'rounds'} of 20` : 'None selected yet: tick at least one worksheet to start a class.'}</p></div>
             {selection.length > 0 && !locked && <button type="button" className="link-button" onClick={() => act('all', () => selectWorksheets([]))}>Clear selection</button>}
           </div>
           {locked && <p className="muted">A class is in progress or has results, so the selection is fixed. Start a new class in the classroom to change it. You can still upload and preview.</p>}
@@ -122,7 +122,7 @@ export default function WorksheetsPage() {
                 </div></td>
               </tr>)}</tbody>
             </table></div>}
-          <p className="fine-print">Each round uses 20 questions: 10 in Part A and 10 new ones in Part B. Ticking several worksheets merges them into one question set. Only upload material you have permission to use; files that need reading are sent to Gemini.</p>
+          <p className="fine-print">A round is 20 questions by default (change it in the classroom's marking plan). Ticking several worksheets merges them into one question set. Only upload material you have permission to use; files that need reading are sent to Gemini.</p>
         </section>
       </main>
     </div>

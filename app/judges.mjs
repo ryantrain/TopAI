@@ -1,8 +1,8 @@
-// The backend has one judge: a local Ollama model (OLLAMA_JUDGE_MODEL, else OLLAMA_MODEL).
-// The other judges are listed for display and cannot be chosen yet.
+// The backend judges with Gemini and falls back to local Ollama (OLLAMA_MODEL) when Gemini
+// has no key or is rate limited. The other judges are listed for display and cannot be chosen yet.
 export const JUDGES = [
-  { id: 'local', name: 'Qwen', detail: 'Local model through Ollama', connected: true },
-  { id: 'gemini', name: 'Gemini', detail: 'Google', connected: false },
+  { id: 'gemini', name: 'Gemini', role: 'main', detail: 'Google', connected: true },
+  { id: 'local', name: 'Qwen', role: 'backup', detail: 'Local model through Ollama', connected: true },
   { id: 'gpt', name: 'GPT', detail: 'OpenAI', connected: false },
   { id: 'claude', name: 'Claude', detail: 'Anthropic', connected: false },
 ];

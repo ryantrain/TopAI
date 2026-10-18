@@ -21,7 +21,7 @@ export default function WorksheetModal({ worker, onClose }) {
     <section className="modal" role="dialog" aria-modal="true" aria-labelledby="sheet-title" onClick={e => e.stopPropagation()} style={{ '--agent': worker.color }}>
       <button ref={closeButton} type="button" className="modal-close" aria-label="Close" onClick={onClose}><X size={18}/></button>
       <h2 id="sheet-title">{worker.name}'s latest answers</h2>
-      <p className="hint">{worker.model ? `${worker.model} · ` : ''}The most recent part, marked against your answer key.</p>
+      <p className="hint">{worker.model ? `${worker.model} · ` : ''}The most recent round, marked against your answer key.</p>
       {d && Object.keys(d).length > 0 && <dl className="diagnostics">
         {d.repeat_agreement !== undefined && <div><dt>Same answer on every repeat</dt><dd>{d.repeat_agreement}%</dd></div>}
         {d.numeric_valid_count !== undefined && <div><dt>Valid numbers</dt><dd>{d.numeric_valid_count}/{worker.answers.length}</dd></div>}

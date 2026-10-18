@@ -70,7 +70,7 @@ test('cumulative series keeps running accuracy per batch', () => {
   const a = { id: 'a', scores: [{ round: 1, stage: 'benchmark', correct: 10, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }, { round: 1, stage: 'reveal', correct: 0, attempted: 10, total_tokens: 100, elapsed_seconds: 1 }] };
   const rows = cumulativeSeries([a], 'accuracy');
   assert.deepEqual(rows.map(r => r.a), [100, 50]);
-  assert.deepEqual(rows.map(r => r.label), ['Round 1 · A', 'Round 1 · B']);
+  assert.deepEqual(rows.map(r => r.label), ['Round 1', 'Round 1 · B']);
   assert.equal(letterGrade(85), 'B');
   assert.equal(letterGrade(null), '—');
 });

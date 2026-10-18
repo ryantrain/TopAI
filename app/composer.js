@@ -6,7 +6,7 @@ import CriteriaReview from './criteria-review';
 import WorksheetMenu, { selectionSummary } from './benchmark-picker';
 import { readApiResponse } from './api-response.mjs';
 
-const BLANK_PLAN = { goal: '', method: 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: 0.000001, pass_score: 80, repetitions: 1 };
+const BLANK_PLAN = { goal: '', method: 'exact', output_unit: 'ideas', instructions: '', rubric: '', tolerance: 0.000001, pass_score: 80, repetitions: 1, batch_size: 20 };
 const post = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 // Chat-style task box. Flow: choose worksheets with +, type the task, press ↑ so Qwen drafts a
@@ -23,7 +23,9 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   const textarea = useRef(null);
   const drafting = useRef(null);
   const selectedCount = market?.selection?.length ? market.selection_count || 0 : null;
-  const maxRounds = dataset ? Math.floor(dataset.count / 20) : 0;
+  // Questions per round come from the plan being edited, else the saved one (backend default 20).
+  const roundSize = plan.batch_size || dataset?.batch_size || 20;
+  const maxRounds = dataset ? Math.floor(dataset.count / roundSize) : selectedCount ? Math.floor(selectedCount / roundSize) : 0;
   const locked = step === 1;
   // No run-type control: real models when the backend has API keys, otherwise a simulated practice run.
   const mode = market?.live_available ? 'live' : 'demo';
@@ -91,7 +93,7 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   const note = step === 1 ? 'Agents are working. The task is locked until this class ends.'
     : step === 2 ? 'Send a new task to start a fresh class.'
     : noWorksheet ? 'Press + to choose a worksheet.'
-    : tooSmall ? `Selected worksheets have ${selectedCount} questions; a round needs 20. Press + to tick more worksheets.`
+    : tooSmall ? `Selected worksheets have ${selectedCount} questions; a round needs ${roundSize}. Press + to tick more worksheets, or lower questions per round.`
     : review === 'drafting' ? 'Qwen is turning your task into a marking plan. This usually takes under a minute.'
     : review === 'review' || review === 'saving' ? (missingRubric ? 'Add judge criteria before starting.' : 'Check the plan, then save it. Pressing ↑ saves and starts the class.')
     : review === 'saved' ? `Criteria saved · ${selectionSummary(market)} · ${runText}. Press ↑ to start.`
@@ -100,7 +102,7 @@ export default function Composer({ market, step, busy, refresh, onStart, onNewTa
   return <div className="composer-wrap">
     {step === 0 && review === 'drafting' && <div className="criteria drafting" role="status"><Loader2 size={16} className="spin"/><div><strong>Writing the marking plan</strong><p className="muted">Qwen is reading your task{dataset ? ` and ${dataset.name}` : ''} to choose how answers are evaluated. This runs on your computer and usually takes under a minute.</p></div><button type="button" className="link-button" onClick={skipDraft}>Skip, I'll fill it in</button></div>}
     {step === 0 && review && review !== 'drafting' && <CriteriaReview plan={plan} change={change} rounds={rounds} setRounds={setRounds} maxRounds={maxRounds}
-      state={review} draftError={draftError} judgeModel={plan.judge_model} stale={!!draftedGoal && plan.goal.trim() !== draftedGoal}
+      state={review} draftError={draftError} stale={!!draftedGoal && plan.goal.trim() !== draftedGoal}
       onSave={save} onRedraft={draft}/>}
 
     <div className={`composer ${locked ? 'locked' : ''}`}>

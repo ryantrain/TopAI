@@ -29,7 +29,7 @@ export default function ReportCard({ rows, winner, onSelect, countItems, plan, d
     <p className="section-note">Totals across every round. Select an agent to see their marked answers.</p>
     {judged && <p className="judge-note">{demo
       ? 'Practice run: the judge was not called, so answers were compared with the answer key.'
-      : `Marked by the ${plan.judge_model || 'local'} judge against your rubric. An answer counts as correct at ${plan.pass_score}/100 or above. Judge scores are estimates; check them in each agent's answers.`}</p>}
+      : `Marked by Gemini against your rubric (local Qwen marks instead when Gemini has no key or hits its rate limit). An answer counts as correct at ${plan.pass_score}/100 or above. Judge scores are estimates; check them in each agent's answers.`}</p>}
     <div className="table-wrap"><table>
       <thead><tr><th>Agent</th><th>Grade</th><th className="num">Overall</th><th className="num">{judged ? 'Pass rate' : 'Accuracy'}</th><th className="num">{countItems ? 'Items / 1k tok' : 'Correct / 1k tok'}</th><th className="num">Time / q</th><th className="num">Est. cost</th></tr></thead>
       <tbody>{rows.map(w => <tr key={w.id} className={winner === w.id ? 'top' : ''}>

@@ -7,12 +7,12 @@ export const METHODS = {
   exact: 'Exact answer / label',
   numeric: 'Numeric agreement',
   json: 'Structured JSON equality',
-  rubric: 'Local rubric judge (Qwen)',
+  rubric: 'Rubric judge (Gemini, Qwen backup)',
   items: 'Count distinct generated items',
 };
 
 // Review the marking plan Qwen drafted from the user's task, before it is saved and run.
-export default function CriteriaReview({ plan, change, rounds, setRounds, maxRounds, state, draftError, judgeModel, stale, onSave, onRedraft }) {
+export default function CriteriaReview({ plan, change, rounds, setRounds, maxRounds, state, draftError, stale, onSave, onRedraft }) {
   const rubric = plan.method === 'rubric';
   const preset = RUBRICS.find(r => r.text === plan.rubric)?.id;
   const saving = state === 'saving';
@@ -21,7 +21,7 @@ export default function CriteriaReview({ plan, change, rounds, setRounds, maxRou
       <div><h2 id="criteria-title">Marking plan</h2>
         <p>{state === 'saved' ? 'Saved. Press ↑ to start the class.'
           : draftError === 'skipped' ? 'Fill in how answers are marked, or press Redraft to let Qwen draft it.' : draftError ? `Could not draft a plan automatically (${draftError}). Fill it in below.`
-          : 'Drafted from your task by Qwen. Check it, then save.'}</p></div>
+          : 'Drafted from your task by local Qwen. Check it, then save.'}</p></div>
       <button type="button" className="link-button" onClick={onRedraft} disabled={saving}><RefreshCw size={13}/>{stale ? 'Task changed · redraft' : 'Redraft'}</button>
     </div>
 
@@ -37,7 +37,7 @@ export default function CriteriaReview({ plan, change, rounds, setRounds, maxRou
       {rubric && <div className="wide judge-row" role="radiogroup" aria-label="Judge">
         <span className="field-label">Judge</span>
         {JUDGES.map(j => <span key={j.id} className={`judge-pill ${j.connected ? 'on' : ''}`} role="radio" aria-checked={j.connected} aria-disabled={!j.connected}
-          title={j.connected ? undefined : 'Not connected yet'}>{j.connected && <Check size={12}/>}{j.name}{j.connected && judgeModel ? ` · ${judgeModel}` : ''}</span>)}
+          title={j.connected ? undefined : 'Not connected yet'}>{j.connected && <Check size={12}/>}{j.name}{j.role ? ` · ${j.role}` : ''}</span>)}
       </div>}
 
       {rubric && <label className="wide">Judge criteria
@@ -48,6 +48,7 @@ export default function CriteriaReview({ plan, change, rounds, setRounds, maxRou
 
       <div className="wide criteria-run">
         <label>Repeats<select value={plan.repetitions ?? 1} onChange={e => change('repetitions', Number(e.target.value))}>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}× per question</option>)}</select></label>
+        <label>Questions per round<input type="number" min="1" max="50" value={plan.batch_size ?? 20} onChange={e => change('batch_size', e.target.value === '' ? '' : Math.max(1, Math.min(50, Math.round(Number(e.target.value)))))}/></label>
         <label>Rounds<select value={rounds} onChange={e => setRounds(Number(e.target.value))}>{Array.from({ length: Math.max(1, Math.min(10, maxRounds)) }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}</select></label>
       </div>
     </div>
@@ -56,7 +57,7 @@ export default function CriteriaReview({ plan, change, rounds, setRounds, maxRou
     <div className="criteria-actions">
       <button type="button" className="primary-button" onClick={onSave} disabled={saving || state === 'saved' || (rubric && !plan.rubric?.trim())}>
         {saving ? <Loader2 size={14} className="spin"/> : state === 'saved' ? <Check size={14}/> : null}{state === 'saved' ? 'Criteria saved' : 'Save benchmark criteria'}</button>
-      <p className="muted">{rubric ? 'Rubric scores are estimates from a local model; spot-check them in each agent\'s answers. Practice runs compare with the answer key instead of calling the judge.' : 'Scoring runs directly in Python against your answer key.'}</p>
+      <p className="muted">{rubric ? 'Gemini marks each answer against these criteria; if Gemini has no API key or hits its rate limit, local Qwen marks instead. Judge scores are estimates, so spot-check them in each agent\'s answers. Practice runs compare with the answer key instead of calling the judge.' : 'Scoring runs directly in Python against your answer key.'}</p>
     </div>
   </section>;
 }

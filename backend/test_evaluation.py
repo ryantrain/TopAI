@@ -185,6 +185,7 @@ class EvaluationCheck(unittest.TestCase):
         exchange.market['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact', batch_size=10).model_dump()
         # Missing Gemini uses Ollama; fail before workers if it is unavailable.
         with TestClient(exchange.app) as client, patch.dict(os.environ, {'GEMINI_API_KEY': ''}), \
+                patch.object(providers, 'readiness', return_value=[]), \
                 patch.object(exchange, 'ask', AsyncMock()) as ask, \
                 patch.object(providers, 'local_models_ready', AsyncMock(side_effect=ValueError('Download local fallback first'))):
             response = client.post('/api/rounds', json=dict(mode='live'))
