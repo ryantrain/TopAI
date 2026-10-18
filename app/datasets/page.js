@@ -66,12 +66,7 @@ export default function DatasetsPage() {
   }
 
   return <div className="shell">
-    <Sidebar>
-      <dl className="session">
-        <div><dt>Datasets saved</dt><dd>{files.length}</dd></div>
-        <div><dt>Used in next class</dt><dd>{selection.length ? `${selection.length} · ${count} questions` : 'None selected'}</dd></div>
-      </dl>
-    </Sidebar>
+    <Sidebar/>
     <div className="workspace">
       <main className="stage datasets">
         <header className="page-head">

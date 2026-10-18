@@ -29,8 +29,35 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--muted); font-size: 12.5px; }
 
+.history-table { width: 100%; border-collapse: collapse; text-align: left; }
+.history-table caption { text-align: left; padding-bottom: 12px; color: var(--ink-2); }
+.history-table th, .history-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.history-table td { font-variant-numeric: tabular-nums; }
+.history-pagination { display: flex; align-items: center; gap: 16px; }
+.history-page { gap: 28px; }
+.history-results { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.history-summary { padding: 26px; background: var(--tile); border: 1px solid var(--line); border-radius: 16px; }
+.history-summary-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.history-summary-top > div { min-width: 0; }
+.history-summary h2 { margin-top: 10px; font-size: 26px; font-weight: 650; line-height: 1.25; letter-spacing: -.4px; }
+.history-mode { display: inline-block; padding: 4px 9px; border: 1px solid var(--line-strong); border-radius: 6px; font-size: 12px; color: var(--ink-2); background: var(--surface); }
+.history-worksheet { margin-top: 6px; color: var(--ink-2); overflow-wrap: anywhere; }
+.history-meta { display: flex; flex-wrap: wrap; gap: 20px 40px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line-strong); }
+.history-meta dt { font-size: 12px; color: var(--ink-2); }
+.history-meta dd { margin-top: 4px; font-size: 14px; font-weight: 550; }
+.history-task { margin-top: 24px; padding: 18px 20px; background: var(--surface); border-radius: 12px; }
+.history-task h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.history-task p { max-width: 70ch; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-reference { margin-top: 18px; font-size: 12px; color: var(--ink-2); }
+.history-reference summary { cursor: pointer; }
+.history-reference code { display: block; margin-top: 10px; overflow-wrap: anywhere; }
+.history-row-actions { display: flex; align-items: center; gap: 8px; }
+.history-delete { display: inline-flex; align-items: center; justify-content: center; padding: 9px; border-radius: 7px; color: var(--ink-2); }
+.history-delete:hover:not(:disabled), .history-delete-button:hover:not(:disabled) { background: #fbefec; color: var(--bad); }
+.history-delete-button { color: var(--bad); }
+
 /* Shell */
-.shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: 100vh; }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 6px; padding: 22px 16px; background: #efeee9; border-right: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 650; letter-spacing: -.2px; margin-bottom: 26px; }
 .brand-mark { width: 22px; height: 16px; border-radius: 3px; background: var(--navy); box-shadow: inset 0 -4px 0 var(--wood); }
@@ -46,6 +73,25 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
 .session dd { font-size: 13px; color: var(--ink-2); overflow-wrap: anywhere; }
 .sidebar-button { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px; color: var(--ink-2); font-size: 13px; }
 .sidebar-button:hover:not(:disabled) { background: var(--surface); }
+.sidebar-history { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.sidebar-history-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; }
+.sidebar-history-head h2 { font-size: 13px; font-weight: 600; }
+.sidebar-history-head button { display: grid; place-items: center; padding: 6px; border-radius: 6px; color: var(--ink-2); }
+.sidebar-history-head button:hover { background: var(--surface); }
+.sidebar-history-note { padding: 6px 10px; color: var(--ink-2); font-size: 12px; }
+.sidebar-history-note button { text-decoration: underline; }
+.history-links { overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.history-links a { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 10px; color: var(--ink-2); text-decoration: none; }
+.history-link-row { display: flex; align-items: center; border-radius: 10px; }
+.history-link-row > a { flex: 1; min-width: 0; }
+.history-link-row:hover, .history-link-row:focus-within { background: rgba(255,255,255,.6); }
+.history-link-row.on { background: var(--surface); color: var(--navy); }
+.history-link-row .history-delete { flex-shrink: 0; margin-right: 4px; }
+.history-links svg { flex-shrink: 0; }
+.history-links span { min-width: 0; }
+.history-links strong { display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-links small { display: block; font-size: 11px; margin-top: 2px; }
+.history-all { padding: 8px 10px; font-size: 12px; color: var(--ink-2); text-underline-offset: 3px; }
 
 .workspace { display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
 .stage { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 32px 40px 24px; display: flex; flex-direction: column; gap: 22px; }
@@ -327,6 +373,12 @@ tr.top td { background: #f8f7f3; }
 }
 @media (max-width: 820px) {
   .shell { grid-template-columns: 1fr; }
+  .sidebar-history { flex-basis: 100%; order: 4; }
+  .history-links { max-height: 180px; }
+  .history-summary { padding: 18px; }
+  .history-summary-top { flex-wrap: wrap; gap: 16px; }
+  .history-meta { gap: 16px 24px; }
+  .history-task { padding: 14px; }
   .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
     .sidebar-label, .session { display: none; }
     .side-nav { flex-direction: row; order: 3; width: 100%; margin: 0; }
