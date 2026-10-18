@@ -92,6 +92,16 @@ class MarketCheck(unittest.TestCase):
         self.assertFalse(exchange.market['running'])
         self.assertEqual(exchange.market['phase'], 'error')
 
+    def test_failed_round_names_http_provider_and_status(self):
+        exchange.market.clear()
+        exchange.market.update(exchange.initial_state())
+        async def fail(state, reveal=False):
+            response = exchange.httpx.Response(429, request=exchange.httpx.Request('POST', 'https://generativelanguage.googleapis.com/v1beta/models/test'))
+            raise exchange.httpx.HTTPStatusError('quota', request=response.request, response=response)
+        with patch.object(exchange, 'benchmark', fail):
+            asyncio.run(exchange.run_round())
+        self.assertIn('Gemini HTTP 429', exchange.market['error'])
+
     def test_multiple_rounds_stop_after_a_failure(self):
         exchange.market.clear()
         exchange.market.update(exchange.initial_state())

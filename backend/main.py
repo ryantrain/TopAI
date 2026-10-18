@@ -361,9 +361,16 @@ async def run_round():
         except Exception as error:
             market.clear()
             market.update(before)
-            market.update(running=False, phase='error', error=f'Round rolled back ({type(error).__name__}). Check the backend terminal and API configuration.')
+            if isinstance(error, httpx.HTTPStatusError):
+                host = error.request.url.host
+                service = {'generativelanguage.googleapis.com': 'Gemini', 'api.anthropic.com': 'Anthropic',
+                           'api.openai.com': 'OpenAI', '127.0.0.1': 'Ollama'}.get(host, 'Provider')
+                detail = f'{service} HTTP {error.response.status_code}'
+            else:
+                detail = type(error).__name__
+            market.update(running=False, phase='error', error=f'Round rolled back ({detail}). Check the backend terminal and API configuration.')
             # Do not log exception text: provider errors may include sensitive request data.
-            print(f'Round failed: {type(error).__name__}', flush=True)
+            print(f'Round failed: {detail}', flush=True)
         persist(market)
 
 
