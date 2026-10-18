@@ -97,7 +97,8 @@ export default function ClassroomPage() {
     ? [config?.workers?.[index]?.provider, config?.workers?.[index]?.model].filter(Boolean).join(' · ') || agent.model || 'API agent'
     : 'Simulated demo agent');
   const evaluator = session?.dataset?.benchmark_plan?.evaluator || session?.integrations?.evaluator;
-  const judgeLabel = evaluator?.provider === 'gemini' ? 'Gemini API' : 'Local Ollama fallback';
+  const judgeLabel = evaluator?.provider === 'gemini' ? 'Gemini API'
+    : evaluator?.provider === 'openai' ? 'OpenAI API fallback' : 'Local Ollama fallback';
   const remaining = session?.dataset ? Math.floor(session.dataset.count / 10) - (session?.round || 0) : 10 - (session?.round || 0);
 
   const phase = session?.phase;

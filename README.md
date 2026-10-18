@@ -16,7 +16,8 @@ App checks WORKER_PROVIDERS and their API keys
    └─ incomplete: run 3 seeded simulated demo agents
    ↓
 Gemini evaluates each completed answer batch when GEMINI_API_KEY is set
-   └─ missing or failed Gemini request: local Ollama evaluates the batch
+   └─ missing or failed Gemini request: OpenAI evaluates when OPENAI_API_KEY is set
+       └─ missing or failed OpenAI request: local Ollama evaluates the batch
    ↓
 Python stores verdicts and updates accuracy, speed, token, cost, and chart data
    ↓
@@ -33,7 +34,7 @@ Requirements:
 
 - Node.js 20.9+
 - Python 3.11+
-- [Ollama](https://ollama.com/) for benchmark planning and the evaluation fallback
+- [Ollama](https://ollama.com/) for benchmark planning and the final evaluation fallback
 - Provider API keys for real agents; without a complete agent configuration the app uses the demo fallback
 
 On macOS or Linux:
@@ -65,6 +66,11 @@ Copy `.env.example` to `.env`. `WORKER_PROVIDERS` accepts one to six comma-separ
 GEMINI_API_KEY=your_key
 GEMINI_MODEL=gemini-3.8-flash
 
+OPENAI_API_KEY=your_key
+OPENAI_MODEL=gpt-4.1-mini
+# Optional; blank uses OPENAI_MODEL.
+OPENAI_JUDGE_MODEL=
+
 WORKER_PROVIDERS=gemini,gemini,gemini
 WORKER_MODELS=gemini-3.8-flash,gemini-3.8-flash,gemini-3.8-flash
 WORKER_COST_PER_1K_TOKENS=,,
@@ -77,7 +83,8 @@ At setup, the UI reports either **API agents ready** or **Demo fallback ready**.
 Evaluation follows a separate priority:
 
 1. `GEMINI_API_KEY` present: Gemini judges answer batches.
-2. If Gemini is not configured or its request fails: `OLLAMA_MODEL` judges locally.
+2. If Gemini is not configured or its request fails and `OPENAI_API_KEY` is present: OpenAI judges them.
+3. If neither cloud judge succeeds: `OLLAMA_MODEL` judges locally.
 
 Ollama always drafts benchmark plans. Structured CSV/JSON imports need no conversion model. PDF, photo, Word, Excel, PowerPoint, and text worksheet conversion uses Gemini, with `GEMINI_CONVERT_MODEL` falling back to `GEMINI_MODEL`.
 
@@ -122,7 +129,7 @@ Demo timing and token counts are seeded simulation values. Evaluator latency and
 
 SQLite is the default. Set `DATABASE_URL` to a TigerData/PostgreSQL connection string to store active state and completed-quiz archives remotely. Changing storage backends does not migrate existing history.
 
-Uploaded worksheet source files remain in owner-only local storage. Cloud workers receive benchmark questions. Gemini evaluation receives questions, worker answers, references, and criteria. When Gemini is absent, Ollama evaluation stays on the local machine. Remove unnecessary personal information from student material before using cloud services.
+Uploaded worksheet source files remain in owner-only local storage. Cloud workers receive benchmark questions. The active cloud judge receives questions, worker answers, references, and criteria. When neither cloud judge is configured or succeeds, Ollama evaluation stays on the local machine. Remove unnecessary personal information from student material before using cloud services.
 
 ## API and verification
 

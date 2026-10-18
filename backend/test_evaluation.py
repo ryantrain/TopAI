@@ -13,19 +13,35 @@ from backend import datasets, evaluation, providers
 
 
 class EvaluationCheck(unittest.TestCase):
-    def test_evaluator_prefers_gemini_and_falls_back_to_ollama(self):
-        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured'}):
+    def test_evaluator_priority(self):
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured', 'OPENAI_API_KEY': 'configured'}):
             self.assertEqual(evaluation.evaluator(), dict(provider='gemini', model=providers.model_for('gemini')))
-        with patch.dict(os.environ, {'GEMINI_API_KEY': ''}):
+            self.assertEqual([judge['provider'] for judge in evaluation.evaluator_chain()],
+                             ['gemini', 'openai', 'ollama'])
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': 'configured',
+                                     'OPENAI_JUDGE_MODEL': 'gpt-judge-test'}):
+            self.assertEqual(evaluation.evaluator(), dict(provider='openai', model='gpt-judge-test'))
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': ''}):
             self.assertEqual(evaluation.evaluator(), dict(provider='ollama', model=providers.model_for('ollama')))
 
-    def test_gemini_evaluation_failure_uses_ollama(self):
+    def test_gemini_evaluation_failure_uses_openai(self):
         plan = evaluation.BenchmarkPlan(goal='Check answer', method='exact').model_dump()
         verdict = dict(grades=[dict(id=0, correct=True, score=100, reason='Matches')])
         ask = AsyncMock(side_effect=[RuntimeError('Gemini unavailable'), verdict])
-        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured'}), patch.object(providers, 'ask', ask):
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured', 'OPENAI_API_KEY': 'configured'}), \
+                patch.object(providers, 'ask', ask):
             grade = asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['A'], plan))[0]
-        self.assertEqual([call.kwargs['provider'] for call in ask.call_args_list], ['gemini', 'ollama'])
+        self.assertEqual([call.kwargs['provider'] for call in ask.call_args_list], ['gemini', 'openai'])
+        self.assertEqual(grade['evaluator_provider'], 'openai')
+
+    def test_judge_falls_through_to_ollama(self):
+        plan = evaluation.BenchmarkPlan(goal='Check answer', method='exact').model_dump()
+        verdict = dict(grades=[dict(id=0, correct=True, score=100, reason='Matches')])
+        ask = AsyncMock(side_effect=[RuntimeError('Gemini unavailable'), RuntimeError('OpenAI unavailable'), verdict])
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured', 'OPENAI_API_KEY': 'configured'}), \
+                patch.object(providers, 'ask', ask):
+            grade = asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['A'], plan))[0]
+        self.assertEqual([call.kwargs['provider'] for call in ask.call_args_list], ['gemini', 'openai', 'ollama'])
         self.assertEqual(grade['evaluator_provider'], 'ollama')
 
     def test_generated_items_count_and_saved_metadata(self):
@@ -65,7 +81,8 @@ class EvaluationCheck(unittest.TestCase):
         verdicts = dict(grades=[dict(id=0, correct=True, score=95, reason='Within tolerance'),
                                 dict(id=1, correct=False, score=10, reason='Contradicts the reference')])
         mock = AsyncMock(return_value=verdicts)
-        with patch.object(providers, 'ask', mock):
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': ''}), \
+                patch.object(providers, 'ask', mock):
             grades = asyncio.run(evaluation.grade(
                 [dict(question='Paper 1', answer='10'), dict(question='Paper 2', answer='10')], [9, 2], plan))
         self.assertEqual([g['correct'] for g in grades], [True, False])
@@ -102,7 +119,7 @@ class EvaluationCheck(unittest.TestCase):
                     asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['B'], plan))
 
     def test_plan_api_validation_freeze_and_persistence(self):
-        with TestClient(exchange.app) as client:
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': ''}), TestClient(exchange.app) as client:
             body = dict(goal='Classify tickets', method='exact', instructions='Return a label')
             self.assertEqual(client.put('/api/benchmark', json=body).status_code, 200)
             self.assertEqual(exchange.restore()['dataset']['benchmark_plan']['goal'], body['goal'])
@@ -170,7 +187,7 @@ class EvaluationCheck(unittest.TestCase):
         self.assertTrue(all(w['score'] == 100 for w in state['workers']))
         self.assertNotIn(plan['goal'], mock.call_args.args[1])
         self.assertNotIn('answer', mock.call_args.args[0])
-        # Demo skips worker providers but still sends each simulated batch to the local judge.
+        # Demo skips worker providers but still sends each simulated batch to the configured judge.
         state['mode'] = 'demo'
         demo_judge = AsyncMock(return_value=dict(grades=[dict(id=i, correct=True, score=99, reason='Within tolerance') for i in range(10)]))
         with patch.object(exchange, 'ask', AsyncMock(side_effect=AssertionError('demo called a worker provider'))), \
@@ -191,7 +208,7 @@ class EvaluationCheck(unittest.TestCase):
 
     def test_demo_run_preflights_local_judge(self):
         exchange.session['dataset']['benchmark_plan'] = evaluation.BenchmarkPlan(goal='Classify', method='exact').model_dump()
-        with TestClient(exchange.app) as client, \
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': ''}), TestClient(exchange.app) as client, \
                 patch.object(providers, 'local_models_ready', AsyncMock(side_effect=ConnectionError())), \
                 patch.object(exchange, 'ask', AsyncMock()) as ask:
             response = client.post('/api/rounds', json=dict(mode='demo'))
@@ -322,8 +339,8 @@ class EvaluationCheck(unittest.TestCase):
             self.assertNotIn('benchmark_plan', exchange.session['dataset'])
 
     def test_open_ended_plan_saves_without_extra_criteria(self):
-        # Extra criteria are optional: the reference answer is the ground truth Ollama compares against.
-        with TestClient(exchange.app) as client:
+        # Extra criteria are optional: the reference answer is the judge's ground truth.
+        with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': ''}), TestClient(exchange.app) as client:
             saved = client.put('/api/benchmark', json=dict(goal='Summarize faithfully',
                                execution_spec=json.dumps(dict(method='rubric', rubric=''))))
             self.assertEqual(saved.status_code, 200, saved.text)

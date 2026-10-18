@@ -19,7 +19,7 @@ Integral mathematics is the reference use case. The same benchmark plan supports
 3. The user reviews and saves the plan.
 4. The app detects one to six configured agents and their required keys. A complete setup uses those agents; an incomplete setup falls back to three seeded simulated agents.
 5. Every agent receives the same 10 questions concurrently without reference answers.
-6. Gemini grades each completed batch when `GEMINI_API_KEY` exists. If Gemini is absent or its request fails, local Ollama grades it. Deterministic item counting remains in Python.
+6. Gemini grades each completed batch when configured. If it is absent or fails, OpenAI grades it when configured; local Ollama is the final fallback. Deterministic item counting remains in Python.
 7. Python stores the verdicts and updates the live graph and metrics.
 8. If the user selected more quizzes, the process continues with the next 10 unused questions.
 9. The dashboard recommends the strongest agent for this task and lets the user inspect every response and grade.
@@ -53,7 +53,7 @@ For symbolic integral answers, the default rubric asks the evaluator to recogniz
 - Local Ollama benchmark-plan drafting.
 - Automatic selection of one to six configured API/local agents.
 - Three-agent simulated fallback when provider setup is incomplete.
-- Gemini-first grading with local Ollama fallback.
+- Gemini-first grading, then OpenAI, with local Ollama as the final fallback.
 - CSV, JSON, JSONL, PDF, image, Word, Excel, PowerPoint, and text worksheet intake.
 - Exact, numeric, JSON, item-count, and rubric methods.
 - One to ten quizzes, with 10 fresh questions per quiz.
@@ -65,13 +65,13 @@ For symbolic integral answers, the default rubric asks the evaluator to recogniz
 - This is a local, single-user prototype without authentication or user isolation.
 - A runnable selection needs at least 10 distinct examples; each quiz consumes 10.
 - Exact duplicate detection cannot find semantic overlap or a wrong answer key.
-- Gemini and Ollama verdicts can be inconsistent or wrong, especially on borderline answers.
+- Gemini, OpenAI, and Ollama verdicts can be inconsistent or wrong, especially on borderline answers.
 - Provider token counts use different tokenizers and configured costs are estimates.
 - Demo mode demonstrates the workflow and cannot support claims about real model performance.
 
 ## Privacy
 
-API keys remain in the backend environment. Cloud workers receive benchmark questions and instructions. Gemini evaluation receives the questions, worker responses, reference answers, and rubric. Without a Gemini key, Ollama evaluation stays local. Worksheet conversion for unstructured files also uses Gemini. Users must have permission to process uploaded educational material and should remove unnecessary identifying information.
+API keys remain in the backend environment. Cloud workers receive benchmark questions and instructions. The active cloud judge receives the questions, worker responses, reference answers, and rubric. If neither cloud judge is configured or succeeds, Ollama evaluation stays local. Worksheet conversion for unstructured files also uses Gemini. Users must have permission to process uploaded educational material and should remove unnecessary identifying information.
 
 ## Success criteria
 

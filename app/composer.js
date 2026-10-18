@@ -32,7 +32,8 @@ export default function Composer({ session, step, busy, refresh, onStart, onNewT
   const maxRounds = dataset ? Math.floor(dataset.count / 10) : 0;
   const locked = step === 1;
   const evaluator = dataset?.benchmark_plan?.evaluator || session?.integrations?.evaluator;
-  const judge = evaluator?.provider === 'gemini' ? 'Gemini judge' : 'Ollama fallback judge';
+  const judge = evaluator?.provider === 'gemini' ? 'Gemini judge'
+    : evaluator?.provider === 'openai' ? 'OpenAI fallback judge' : 'Ollama fallback judge';
   const agentCount = session?.integrations?.configuration?.workers?.length || session?.workers?.length || 3;
   const runLabel = session?.live_available ? `${agentCount} API ${agentCount === 1 ? 'agent' : 'agents'}` : `${session?.workers?.length || 3} demo agents`;
 

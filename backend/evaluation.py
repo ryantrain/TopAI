@@ -1,4 +1,4 @@
-"""Reviewable task specifications judged by Gemini, with local Ollama fallback."""
+"""Reviewable task specifications with Gemini, OpenAI, and Ollama judges."""
 import json
 import math
 import os
@@ -56,10 +56,20 @@ class BenchmarkPlan(BenchmarkProtocol):
         return self
 
 
+def evaluator_chain():
+    """Return configured judges in priority order, ending with local Ollama."""
+    chain = []
+    if os.getenv('GEMINI_API_KEY', '').strip():
+        chain.append(dict(provider='gemini', model=providers.model_for('gemini')))
+    if os.getenv('OPENAI_API_KEY', '').strip():
+        chain.append(dict(provider='openai', model=os.getenv('OPENAI_JUDGE_MODEL') or providers.model_for('openai')))
+    chain.append(dict(provider='ollama', model=providers.model_for('ollama')))
+    return chain
+
+
 def evaluator():
-    """Prefer Gemini when configured; otherwise keep evaluation local with Ollama."""
-    provider = 'gemini' if os.getenv('GEMINI_API_KEY') else 'ollama'
-    return dict(provider=provider, model=providers.model_for(provider))
+    """The first currently available judge, for setup and saved-plan metadata."""
+    return evaluator_chain()[0]
 
 
 def validate_references(dataset, plan):
@@ -217,14 +227,15 @@ async def grade(problems, answers, plan):
         'Return {"grades": [{"id": 0, "correct": true, "score": 0, "reason": "brief evidence-based explanation"}, ...]} '
         'with one entry per item, in order. score is 0-100 for how fully the response meets the criteria.\n'
         + json.dumps(criteria))
-    judge = evaluator()
-    try:
-        result = await providers.ask(json.dumps(items), instruction, **judge)
-    except Exception:
-        if judge['provider'] != 'gemini':
-            raise
-        judge = dict(provider='ollama', model=providers.model_for('ollama'))
-        result = await providers.ask(json.dumps(items), instruction, **judge)
+    failures = []
+    for judge in evaluator_chain():
+        try:
+            result = await providers.ask(json.dumps(items), instruction, **judge)
+            break
+        except Exception as error:
+            failures.append(error)
+    else:
+        raise failures[-1]
     grades = result.get('grades')
     if not isinstance(grades, list) or len(grades) != len(items):
         raise ValueError('The evaluator returned an incomplete grade list')

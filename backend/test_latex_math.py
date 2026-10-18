@@ -1,6 +1,7 @@
-"""LaTeX integral imports use the existing local judge, without model calls in tests."""
+"""LaTeX integral imports keep their rubric plan, without model calls in tests."""
 import asyncio
 import json
+import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -21,7 +22,7 @@ class LatexMathCheck(unittest.TestCase):
     def test_import_keeps_pairs_and_installs_persisted_math_plan(self):
         raw = json.dumps(self.rows())
         for scoring in ('exact', 'numeric'):
-            with TestClient(exchange.app) as client:
+            with patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENAI_API_KEY': ''}), TestClient(exchange.app) as client:
                 response = client.post(f'/api/dataset?filename=integrals.json&scoring={scoring}', content=raw)
                 self.assertEqual(response.status_code, 200, response.text)
                 dataset = exchange.session['dataset']

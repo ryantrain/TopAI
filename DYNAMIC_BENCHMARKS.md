@@ -9,7 +9,7 @@ A dataset contains questions and trusted reference answers. A benchmark plan rec
 3. Local Ollama drafts an editable execution plan: instructions, scoring method, tolerance, pass threshold, selection order, and repetitions.
 4. The user reviews and saves that plan.
 5. One to six configured API or local agents answer the same 10 questions concurrently. If their provider configuration is incomplete, the app uses three seeded demo agents.
-6. Gemini judges each agent's completed answer batch when `GEMINI_API_KEY` is set. If Gemini is unavailable, local Ollama judges it. Item counting stays deterministic in Python.
+6. Gemini judges each agent's completed answer batch when configured. If Gemini is unavailable, OpenAI is tried next, then local Ollama. Item counting stays deterministic in Python.
 7. Python stores the judge verdicts and updates the accuracy, speed, token, cost, and overall-score graphs.
 8. An additional quiz uses the next 10 previously unused questions.
 
@@ -48,7 +48,7 @@ Reference answers never enter worker prompts. The AI judge receives questions, r
 | --- | --- |
 | Draft benchmark metrics | Local Ollama |
 | Answer the questions | 1–6 configured agents, or 3 seeded demo agents |
-| Judge answers | Gemini first, local Ollama fallback |
+| Judge answers | Gemini first, OpenAI second, local Ollama fallback |
 | Count generated items | Python |
 | Store results and update graphs | Python/FastAPI backend |
 
@@ -64,6 +64,10 @@ WORKER_COST_PER_1K_TOKENS=,,
 GEMINI_API_KEY=your-key
 GEMINI_MODEL=gemini-3.8-flash
 
+OPENAI_API_KEY=your-key
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_JUDGE_MODEL=
+
 OLLAMA_MODEL=qwen2.5:7b
 ```
 
@@ -74,7 +78,7 @@ ollama serve
 ollama pull qwen2.5:7b
 ```
 
-Structured JSON and CSV files import directly. Converting PDFs, photos, Word, Excel, PowerPoint, and text worksheets uses Gemini. A full benchmark can remain local when worker agents and the judge use Ollama.
+Structured JSON and CSV files import directly. Converting PDFs, photos, Word, Excel, PowerPoint, and text worksheets uses Gemini. Judging tries configured providers in the order Gemini, OpenAI, then Ollama. A full benchmark can remain local when worker agents and the judge use Ollama.
 
 ## Interpretation
 
