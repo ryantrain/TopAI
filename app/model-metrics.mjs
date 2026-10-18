@@ -26,3 +26,51 @@ export function metricLeaders(rows, key) {
 export function fastestQualified(rows, minimumAccuracy) {
   return metricLeaders(rows.filter(w => w.attempted > 0 && 100 * w.correct / w.attempted >= minimumAccuracy), 'speed');
 }
+
+export const ASPECTS = {
+  accuracy: { label: 'Accuracy', unit: '%', better: 'higher', hint: 'Share of answers marked correct.' },
+  efficiency: { label: 'Efficiency', unit: 'correct / 1k tokens', better: 'higher', hint: 'Correct answers per 1,000 tokens used.' },
+  speed: { label: 'Speed', unit: 's / question', better: 'lower', hint: 'Average seconds spent per question.' },
+  cost: { label: 'Cost', unit: 'USD', better: 'lower', hint: 'Estimated spend so far, from configured token prices.' },
+  overall: { label: 'Overall', unit: '/ 100', better: 'higher', hint: 'Efficiency and throughput combined, relative to the best student.' },
+};
+
+// Add accuracy and total estimated cost to the shared modelMetrics rows.
+export function withAspects(rows) {
+  return rows.map(w => {
+    const samples = w.scores || [];
+    const sum = key => samples.reduce((n, s) => n + (s[key] || 0), 0);
+    const priced = samples.length > 0 && samples.every(s => Number.isFinite(s.estimated_cost_usd));
+    // Accuracy counts every graded batch, even ones without token usage.
+    return { ...w, gradedCorrect: sum('correct'), gradedAttempted: sum('attempted'),
+      accuracy: sum('attempted') ? 100 * sum('correct') / sum('attempted') : null,
+      cost: priced ? sum('estimated_cost_usd') : null };
+  });
+}
+
+// One point per finished batch; each point is the running total up to that batch.
+export function cumulativeSeries(workers, aspect, countItems = false) {
+  const batches = workers[0]?.scores || [];
+  return batches.map((batch, i) => {
+    const sliced = workers.map(w => ({ ...w, scores: (w.scores || []).slice(0, i + 1) }));
+    const rows = withAspects(modelMetrics(sliced, null, countItems));
+    return { label: `Quiz ${batch.round} · ${batch.stage === 'reveal' ? 'B' : 'A'}`, ...Object.fromEntries(rows.map(w => [w.id, w[aspect]])) };
+  });
+}
+
+// Prefer the strongest overall student that clears the bar; cost breaks near-ties.
+export function recommend(rows, minimumAccuracy) {
+  const measured = rows.filter(w => w.accuracy !== null);
+  if (!measured.length) return null;
+  const qualified = measured.filter(w => w.accuracy >= minimumAccuracy);
+  const pool = qualified.length ? qualified : measured;
+  // Qualified: best overall wins. Nobody qualified: closest on accuracy, then overall.
+  const keys = w => qualified.length ? [w.overall ?? w.accuracy, 0] : [w.accuracy, w.overall ?? 0];
+  const best = [...pool].sort((a, b) => {
+    const [a1, a2] = keys(a), [b1, b2] = keys(b);
+    return b1 - a1 || b2 - a2 || (a.cost ?? Infinity) - (b.cost ?? Infinity);
+  })[0];
+  return { worker: best, qualified: qualified.length > 0 };
+}
+
+export const letterGrade = accuracy => accuracy === null ? '—' : accuracy >= 90 ? 'A' : accuracy >= 80 ? 'B' : accuracy >= 70 ? 'C' : accuracy >= 60 ? 'D' : 'F';
