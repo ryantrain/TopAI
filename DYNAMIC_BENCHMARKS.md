@@ -34,6 +34,7 @@ Reference answers never enter worker prompts. The AI judge receives questions, r
 }
 ```
 
+- `task_metric` is an optional `{name, unit, instruction}` definition chosen by Ollama, or `null` when no useful extra measurement applies. The judge extracts a numeric value from each response; the table shows its average across measured examples and quizzes. Missing measurements show as unavailable, never zero. This measures reported output (for example apples counted per picture), independently of correctness.
 - `selection` is `sequential` or reproducibly `shuffled`.
 - `repetitions` runs each agent 1–5 times on the same 10 questions to measure output stability.
 - `method` is `exact`, `numeric`, `json`, `rubric`, or `items`.

@@ -13,6 +13,25 @@ from backend import datasets, evaluation, providers
 
 
 class EvaluationCheck(unittest.TestCase):
+    def test_optional_task_metric(self):
+        metric = dict(name='Apples counted', unit='apples / picture', instruction='Extract the apple count reported in the response.')
+        plan = evaluation.BenchmarkPlan(goal='Count apples', task_metric=metric).model_dump()
+        self.assertEqual(json.loads(plan['execution_spec'])['task_metric'], metric)
+        for value in (0, 4, None):
+            verdict = dict(grades=[dict(id=0, correct=True, score=100, reason='Matches', task_metric_value=value)])
+            with patch.object(providers, 'ask', AsyncMock(return_value=verdict)) as ask:
+                grades = asyncio.run(evaluation.grade([dict(question='Count', answer='4')], ['4'], plan))
+            self.assertEqual(grades[0]['task_metric_value'], value)
+            self.assertIn('Apples counted', ask.call_args.args[1])
+            metrics = evaluation.diagnostics(grades, plan)
+            self.assertEqual(metrics['task_metric_mean'], value)
+            self.assertEqual(metrics['task_metric_count'], int(value is not None))
+        verdict['grades'][0]['task_metric_value'] = 'four'
+        with patch.object(providers, 'ask', AsyncMock(return_value=verdict)):
+            with self.assertRaisesRegex(ValueError, 'invalid task metric'):
+                asyncio.run(evaluation.grade([dict(question='Count', answer='4')], ['4'], plan))
+        self.assertNotIn('task_metric_mean', evaluation.diagnostics([], dict(method='exact')))
+
     def test_evaluator_priority(self):
         with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured', 'OPENAI_API_KEY': 'configured'}):
             self.assertEqual(evaluation.evaluator(), dict(provider='gemini', model=providers.model_for('gemini')))
