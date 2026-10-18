@@ -107,14 +107,16 @@ button:disabled, select:disabled, input:disabled { cursor: not-allowed; opacity:
 .notice { padding: 11px 14px; border-radius: 10px; background: #fbefec; border: 1px solid #f0d2cb; color: #7c2d1f; }
 
 /* Agent setup */
-.agent-setup { width: 100%; max-width: 920px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); }
+.agent-setup { width: 100%; max-width: 1080px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); }
 .agent-setup-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
 .agent-setup-head h2 { margin-top: 2px; font-size: 18px; font-weight: 650; }
 .agent-setup-head p:not(.eyebrow) { margin-top: 4px; color: var(--ink-2); font-size: 13px; }
 .setup-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--navy); }
 .agent-config-list { display: flex; flex-direction: column; gap: 9px; }
-.agent-config-row { display: grid; grid-template-columns: 62px 140px minmax(150px, 1fr) minmax(190px, 1fr) 28px; gap: 10px; align-items: end; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
-.agent-config-row > strong { align-self: center; font-size: 12.5px; font-weight: 650; white-space: nowrap; }
+.agent-config-row { display: grid; grid-template-columns: 72px 120px 125px minmax(145px, 1fr) minmax(175px, 1fr) 28px; gap: 10px; align-items: end; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.config-agent-icon { align-self: center; display: flex; flex-direction: column; align-items: center; color: var(--agent); }
+.config-agent-icon img { width: 62px; height: 54px; object-fit: contain; mix-blend-mode: multiply; }
+.config-agent-icon small { margin-top: -4px; color: var(--muted); font-size: 10.5px; font-weight: 600; }
 .agent-config-row label, .local-key { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .agent-config-row label > span, .local-key > span { color: var(--muted); font-size: 11px; font-weight: 600; }
 .agent-config-row select, .agent-config-row input { min-width: 0; width: 100%; height: 36px; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); font-size: 13px; }

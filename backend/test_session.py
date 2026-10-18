@@ -117,8 +117,8 @@ class SessionCheck(unittest.TestCase):
         try:
             with TestClient(exchange.app) as client:
                 response = client.post('/api/agents', json={'agents': [
-                    {'provider': 'openai', 'model': 'gpt-test', 'api_key': secret},
-                    {'provider': 'gemini', 'model': 'gemini-test', 'api_key': 'gemini-secret'},
+                    {'provider': 'openai', 'model': 'gpt-test', 'label': 'Integral Ace', 'api_key': secret},
+                    {'provider': 'gemini', 'model': 'gemini-test', 'label': 'Math Scout', 'api_key': 'gemini-secret'},
                 ]})
                 self.assertEqual(response.status_code, 200)
                 payload = response.json()
@@ -129,6 +129,7 @@ class SessionCheck(unittest.TestCase):
                 current = client.get('/api/session')
                 self.assertEqual(current.status_code, 200)
                 self.assertEqual(len(current.json()['workers']), 2)
+                self.assertEqual([worker['label'] for worker in current.json()['workers']], ['Integral Ace', 'Math Scout'])
                 self.assertEqual(len(current.json()['demo_workers']), 3)
                 self.assertEqual(current.json()['integrations']['agent_source'], 'browser')
                 self.assertNotIn(secret, current.text)

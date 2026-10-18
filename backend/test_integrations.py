@@ -41,8 +41,8 @@ class IntegrationCheck(unittest.TestCase):
         try:
             with patch.dict(os.environ, {}, clear=True):
                 config = providers.configure_agents([
-                    {'provider': 'openai', 'model': 'first-model', 'api_key': first_key},
-                    {'provider': 'openai', 'model': 'second-model', 'api_key': second_key},
+                    {'provider': 'openai', 'model': 'first-model', 'label': 'Ada', 'api_key': first_key},
+                    {'provider': 'openai', 'model': 'second-model', 'label': 'Grace', 'api_key': second_key},
                 ])
                 self.assertEqual(providers.readiness(config), [])
                 public = providers.public_configuration(config)
@@ -50,10 +50,11 @@ class IntegrationCheck(unittest.TestCase):
                 self.assertNotIn(second_key, repr(config) + repr(public))
                 self.assertNotIn('credential_id', repr(public))
                 reused = providers.configure_agents([
-                    {'provider': 'openai', 'model': 'first-model-v2', 'api_key': ''},
-                    {'provider': 'openai', 'model': 'second-model-v2', 'api_key': ''},
+                    {'provider': 'openai', 'model': 'first-model-v2', 'label': 'Ada', 'api_key': ''},
+                    {'provider': 'openai', 'model': 'second-model-v2', 'label': 'Grace', 'api_key': ''},
                 ])
                 self.assertEqual(providers.readiness(reused), [])
+                self.assertEqual(providers.public_configuration(reused)['workers'][1]['label'], 'Grace')
                 credential_id = reused['workers'][1]['credential_id']
                 with patch('openai.AsyncOpenAI', return_value=context) as constructor:
                     result = asyncio.run(providers.ask('question batch', 'Answer', provider='openai', credential_id=credential_id))

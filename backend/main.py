@@ -40,9 +40,10 @@ lock = asyncio.Lock()
 task = None
 
 
-def worker_rows(count=3):
-    return [dict(id=w[0], name=w[1], color=w[2], style=w[3], score=None, scores=[], answers=[])
-            for w in WORKERS[:count]]
+def worker_rows(count=3, labels=None):
+    return [dict(id=w[0], name=w[1], color=w[2], style=w[3], score=None, scores=[], answers=[],
+                 **({'label': labels[index]} if labels and index < len(labels) and labels[index] else {}))
+            for index, w in enumerate(WORKERS[:count])]
 
 
 def initial_state():
@@ -66,7 +67,7 @@ def restore():
     state.setdefault('configuration', None)
     state.setdefault('library', [])
     state.setdefault('selection', [])
-    state['workers'] = [{key: worker.get(key) for key in ('id', 'name', 'color', 'style', 'score', 'scores', 'answers', 'provider', 'model', 'diagnostics') if worker.get(key) is not None}
+    state['workers'] = [{key: worker.get(key) for key in ('id', 'name', 'label', 'color', 'style', 'score', 'scores', 'answers', 'provider', 'model', 'diagnostics') if worker.get(key) is not None}
                         for worker in state.get('workers', worker_rows())]
     # Shared archives may retain dataset metadata after private worksheet rows are removed.
     if state.get('dataset') and not isinstance(state['dataset'].get('problems'), list):
@@ -246,6 +247,7 @@ class StartRequest(BaseModel):
 class AgentSlot(BaseModel):
     provider: str = Field(pattern='^(openai|gemini|anthropic|ollama)$')
     model: str = Field(min_length=1, max_length=200)
+    label: str = Field(min_length=1, max_length=40)
     api_key: str = Field(default='', max_length=1000)
 
 
@@ -275,7 +277,7 @@ async def get_session():
                                       database='TigerData / PostgreSQL' if os.getenv('DATABASE_URL') else 'SQLite')
         result['live_available'] = not missing
         if not missing and not result['round'] and not result['running'] and len(result['workers']) != len(config['workers']):
-            result['workers'] = worker_rows(len(config['workers']))
+            result['workers'] = worker_rows(len(config['workers']), [worker.get('label') for worker in config['workers']])
     except ValueError as error:
         result['integrations'] = dict(error=str(error), evaluator=evaluation.evaluator(), database='TigerData / PostgreSQL' if os.getenv('DATABASE_URL') else 'SQLite')
         result['live_available'] = False
@@ -343,7 +345,7 @@ async def start_round(request: StartRequest):
         missing = providers.readiness(config)
         if missing:
             raise HTTPException(400, 'Configure credentials for ' + ', '.join(missing))
-        available = worker_rows(len(config['workers']))
+        available = worker_rows(len(config['workers']), [worker.get('label') for worker in config['workers']])
         selected_ids = request.agent_ids or [w['id'] for w in available]
         if len(set(selected_ids)) != len(selected_ids) or any(worker_id not in {w['id'] for w in available} for worker_id in selected_ids):
             raise HTTPException(400, 'Choose one to six available agents')

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { KeyRound, Loader2, Plus, Trash2 } from 'lucide-react';
 import { readApiResponse } from './api-response.mjs';
+import { ROSTER } from './agents';
 
 const PROVIDERS = {
   openai: { label: 'OpenAI', model: 'gpt-4o-mini' },
@@ -21,18 +22,20 @@ const MODEL_OPTIONS = {
   ],
 };
 
-const blank = (provider = 'openai') => ({ provider, model: PROVIDERS[provider].model, api_key: '' });
+const blank = (provider = 'openai', index = 0) => ({
+  provider, model: PROVIDERS[provider].model, api_key: '', label: ROSTER[index]?.name || `Agent ${index + 1}`,
+});
 
 export default function AgentSetup({ configuration, onConfigured, onDemo }) {
   const [agents, setAgents] = useState(() => configuration?.workers?.length
-    ? configuration.workers.map(({ provider, model }) => ({ provider, model, api_key: '' }))
+    ? configuration.workers.map(({ provider, model, label }, index) => ({ provider, model, api_key: '', label: label || ROSTER[index]?.name || `Agent ${index + 1}` }))
     : [blank()]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
 
   function change(index, key, value) {
     setAgents(current => current.map((agent, i) => i === index
-      ? key === 'provider' ? blank(value) : { ...agent, [key]: value }
+      ? key === 'provider' ? { ...blank(value, index), label: agent.label } : { ...agent, [key]: value }
       : agent));
   }
 
@@ -72,7 +75,11 @@ export default function AgentSetup({ configuration, onConfigured, onDemo }) {
     <form onSubmit={submit}>
       <div className="agent-config-list">
         {agents.map((agent, index) => <div className="agent-config-row" key={index}>
-          <strong>Agent {index + 1}</strong>
+          <div className="config-agent-icon" style={{ '--agent': ROSTER[index].color }}>
+            <img src={`/agents/${ROSTER[index].key}-rest.png`} alt="" draggable="false"/>
+            <small>Agent {index + 1}</small>
+          </div>
+          <label><span>Display name</span><input required maxLength={40} value={agent.label} onChange={e => change(index, 'label', e.target.value)} placeholder={ROSTER[index].name}/></label>
           <label><span>Provider</span><select value={agent.provider} onChange={e => change(index, 'provider', e.target.value)}>
             {Object.entries(PROVIDERS).map(([value, item]) => <option value={value} key={value}>{item.label}</option>)}
           </select></label>
@@ -84,7 +91,7 @@ export default function AgentSetup({ configuration, onConfigured, onDemo }) {
             onClick={() => setAgents(current => current.filter((_, i) => i !== index))}><Trash2 size={15}/></button>
         </div>)}
       </div>
-      {agents.length < 6 && <button type="button" className="add-agent" disabled={pending} onClick={() => setAgents(current => [...current, blank()])}><Plus size={14}/>Add another agent</button>}
+      {agents.length < 6 && <button type="button" className="add-agent" disabled={pending} onClick={() => setAgents(current => [...current, blank('openai', current.length)])}><Plus size={14}/>Add another agent</button>}
       {error && <p className="setup-error" role="alert">{error}</p>}
       <div className="agent-setup-actions">
         <button type="button" className="demo-button" disabled={pending} onClick={onDemo}>Skip and use 3 demo agents</button>

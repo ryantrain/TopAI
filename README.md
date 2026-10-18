@@ -60,7 +60,7 @@ Open <http://127.0.0.1:3000>. Run `ollama serve` separately if the Ollama deskto
 
 ## Configure agents and evaluation
 
-The setup screen accepts one to six agents. For each agent, choose OpenAI, Gemini, Anthropic, or local Ollama and enter its exact model name. Cloud API keys entered there stay only in backend process memory and are never returned to the browser or written to the database. Restarting FastAPI clears them.
+The setup screen accepts one to six agents. Each new slot gets a distinct classroom character; set its display name, choose OpenAI, Gemini, Anthropic, or local Ollama, and select its model. Cloud API keys entered there stay only in backend process memory and are never returned to the browser or written to the database. Restarting FastAPI clears them.
 
 You can keep credentials in `.env` instead. Copy `.env.example` to `.env`; `WORKER_PROVIDERS` accepts one to six comma-separated providers, while `WORKER_MODELS` and `WORKER_COST_PER_1K_TOKENS` follow the same order.
 

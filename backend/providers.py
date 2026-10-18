@@ -53,12 +53,15 @@ def configure_agents(slots):
     for index, slot in enumerate(slots, 1):
         provider = str(slot.get('provider', '')).strip().lower()
         model = str(slot.get('model', '')).strip()
+        label = str(slot.get('label', '')).strip()
         key = str(slot.get('api_key', '')).strip()
         if provider not in KEYS:
             raise ValueError(f'Agent {index}: choose openai, gemini, anthropic, or ollama')
         if not model or len(model) > 200:
             raise ValueError(f'Agent {index}: enter a model name')
-        worker = dict(provider=provider, model=model)
+        if not label or len(label) > 40:
+            raise ValueError(f'Agent {index}: enter a display name up to 40 characters')
+        worker = dict(provider=provider, model=model, label=label)
         if provider != 'ollama':
             if key:
                 credential_id = secrets.token_urlsafe(18)
