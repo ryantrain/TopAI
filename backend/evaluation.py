@@ -11,6 +11,12 @@ from pydantic import BaseModel, Field, model_validator
 from backend import datasets, providers
 
 
+# Constrains a local judge's reply to this shape; hosted providers ignore it.
+GRADES_SCHEMA = {'type': 'object', 'required': ['grades'], 'properties': {'grades': {'type': 'array', 'items': {
+    'type': 'object', 'required': ['id', 'correct', 'score', 'reason'],
+    'properties': {'id': {'type': 'integer'}, 'correct': {'type': 'boolean'}, 'score': {'type': 'number'}, 'reason': {'type': 'string'}}}}}}
+
+
 class JudgeChainError(RuntimeError):
     """All configured judges failed, with provider-safe diagnostics."""
 
@@ -234,7 +240,7 @@ async def grade(problems, answers, plan):
     failures = []
     for judge in evaluator_chain():
         try:
-            result = await providers.ask(json.dumps(items), instruction, **judge)
+            result = await providers.ask(json.dumps(items), instruction, schema=GRADES_SCHEMA, **judge)
             break
         except Exception as error:
             failures.append((judge['provider'], error))
@@ -249,6 +255,9 @@ async def grade(problems, answers, plan):
         if not isinstance(item, dict):
             raise ValueError('The evaluator returned an invalid grade')
         correct, score, reason = item.get('correct'), item.get('score'), item.get('reason')
+        # Small local models often write 1/0 for true/false.
+        if type(correct) is int and correct in (0, 1):
+            correct = bool(correct)
         if (type(item.get('id')) is not int or item['id'] != i or not isinstance(correct, bool)
                 or type(score) not in (int, float) or isinstance(score, bool) or not math.isfinite(score) or not 0 <= score <= 100
                 or not isinstance(reason, str) or not reason.strip()):

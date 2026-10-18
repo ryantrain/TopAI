@@ -147,8 +147,8 @@ export default function ClassroomPage() {
           </div>
           {step === 1 && <div className="stage-right"><ProgressChart agents={inClass} countItems={countItems} live/></div>}
           {step === 2 && <div className="stage-right">
-            <details className="drawer chart-drawer">
-              <summary>Live chart<ChevronDown size={16} aria-hidden="true"/></summary>
+            <details className="drawer chart-drawer" open>
+              <summary>Chart<ChevronDown size={16} aria-hidden="true"/></summary>
               <ProgressChart agents={inClass} countItems={countItems} height={240}/>
             </details>
             <ReportCard rows={rows} winner={pick?.worker.id} onSelect={setSelected} countItems={countItems}/>

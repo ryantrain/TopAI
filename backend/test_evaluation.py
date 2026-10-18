@@ -98,7 +98,7 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual(grades[0]['evaluation_score'], 95)
         self.assertEqual(grades[1]['evaluation_reason'], 'Contradicts the reference')
         # The verdict is the evaluator's, so no local rule may override it.
-        self.assertEqual(mock.call_args.kwargs, dict(provider='ollama', model=providers.model_for('ollama')))
+        self.assertEqual(mock.call_args.kwargs, dict(provider='ollama', model=providers.model_for('ollama'), schema=evaluation.GRADES_SCHEMA))
         criteria = mock.call_args.args[1]
         self.assertIn('Return the mark', criteria)
         self.assertIn('Reject invented marks', criteria)

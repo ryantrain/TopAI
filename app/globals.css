@@ -207,6 +207,10 @@ tr.top td { background: #f8f7f3; }
 .icon-button:hover { background: var(--bg); }
 .details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; }
 .details-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 550; color: var(--ink-2); }
+.details-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-top: 12px; font-size: 12.5px; }
+.confirm-button { display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 8px; background: var(--navy); color: #fff; font-size: 13.5px; font-weight: 600; }
+.confirm-button:hover:not(:disabled) { background: var(--navy-hover); }
+.confirm-button:disabled { opacity: .5; cursor: not-allowed; }
 .details-grid textarea, .details-grid input { border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; resize: vertical; font-weight: 400; }
 
 /* Worksheet menu */

@@ -131,7 +131,8 @@ async def ask_local(prompt, instruction, model, with_usage=False, schema=None):
         raise ValueError('Choose an installed local Ollama model, without cloud routing.')
     async with httpx.AsyncClient(timeout=300, trust_env=False) as client:
         response = await client.post('http://127.0.0.1:11434/api/chat', json={
-            'model': model, 'stream': False, 'format': schema if schema is not None else 'json', 'options': {'temperature': 0, 'num_predict': 8192},
+            # Reasoning models such as qwen3 otherwise think before every answer, which can exceed the timeout.
+            'model': model, 'stream': False, 'think': False, 'format': schema if schema is not None else 'json', 'options': {'temperature': 0, 'num_predict': 8192},
             'messages': [{'role': 'system', 'content': instruction + ' Return only valid JSON.'},
                          {'role': 'user', 'content': prompt}],
         })
