@@ -7,6 +7,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.test_session import exchange
@@ -15,6 +16,20 @@ import httpx
 
 
 class IntegrationCheck(unittest.TestCase):
+    def test_openai_json_contract(self):
+        client = MagicMock()
+        client.responses.create = AsyncMock(return_value=SimpleNamespace(output_text='{"status":"ready"}', usage=None))
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=client)
+        context.__aexit__ = AsyncMock(return_value=None)
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}), \
+                patch('openai.AsyncOpenAI', return_value=context):
+            result = asyncio.run(providers.ask('question batch', 'Answer', provider='openai'))
+        self.assertEqual(result, {'status': 'ready'})
+        request = client.responses.create.await_args.kwargs
+        self.assertEqual(request['input'], 'JSON input:\nquestion batch')
+        self.assertEqual(request['text'], {'format': {'type': 'json_object'}})
+
     def test_gemini_http_contract_and_invalid_output(self):
         real_client = httpx.AsyncClient
         def respond(request):

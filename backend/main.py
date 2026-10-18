@@ -217,6 +217,8 @@ async def run_round():
                 service = {'generativelanguage.googleapis.com': 'Gemini', 'api.anthropic.com': 'Anthropic',
                            'api.openai.com': 'OpenAI', '127.0.0.1': 'Ollama'}.get(host, 'Provider')
                 detail = f'{service} HTTP {error.response.status_code}'
+            elif isinstance(error, evaluation.JudgeChainError):
+                detail = str(error)
             else:
                 detail = type(error).__name__
             session.update(running=False, phase='error', error=f'Quiz rolled back ({detail}). Check the backend terminal and API configuration.')

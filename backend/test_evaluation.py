@@ -44,6 +44,15 @@ class EvaluationCheck(unittest.TestCase):
         self.assertEqual([call.kwargs['provider'] for call in ask.call_args_list], ['gemini', 'openai', 'ollama'])
         self.assertEqual(grade['evaluator_provider'], 'ollama')
 
+    def test_all_judge_failures_name_each_provider(self):
+        plan = evaluation.BenchmarkPlan(goal='Check answer', method='exact').model_dump()
+        ask = AsyncMock(side_effect=[TimeoutError(), ConnectionError(), RuntimeError()])
+        with patch.dict(os.environ, {'GEMINI_API_KEY': 'configured', 'OPENAI_API_KEY': 'configured'}), \
+                patch.object(providers, 'ask', ask):
+            with self.assertRaisesRegex(evaluation.JudgeChainError,
+                                        r'gemini: TimeoutError, openai: ConnectionError, ollama: RuntimeError'):
+                asyncio.run(evaluation.grade([dict(question='Q', answer='A')], ['A'], plan))
+
     def test_generated_items_count_and_saved_metadata(self):
         plan = evaluation.BenchmarkPlan(goal='Generate ideas', method='items', output_unit='ideas').model_dump()
         answers = [['Solar oven', ' solar   OVEN ', 'Rain barrel'], 'not json', [], [True], '["One", "Two"]']

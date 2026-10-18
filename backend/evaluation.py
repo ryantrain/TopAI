@@ -11,6 +11,10 @@ from pydantic import BaseModel, Field, model_validator
 from backend import datasets, providers
 
 
+class JudgeChainError(RuntimeError):
+    """All configured judges failed, with provider-safe diagnostics."""
+
+
 class BenchmarkProtocol(BaseModel):
     model_config = {"extra": "forbid"}
 
@@ -233,9 +237,10 @@ async def grade(problems, answers, plan):
             result = await providers.ask(json.dumps(items), instruction, **judge)
             break
         except Exception as error:
-            failures.append(error)
+            failures.append((judge['provider'], error))
     else:
-        raise failures[-1]
+        summary = ', '.join(f'{provider}: {type(error).__name__}' for provider, error in failures)
+        raise JudgeChainError(f'judges failed ({summary})') from failures[-1][1]
     grades = result.get('grades')
     if not isinstance(grades, list) or len(grades) != len(items):
         raise ValueError('The evaluator returned an incomplete grade list')

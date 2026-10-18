@@ -66,7 +66,7 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
         from openai import AsyncOpenAI
         async with AsyncOpenAI(api_key=key, timeout=75, max_retries=1) as client:
             response = await client.responses.create(
-                model=model, instructions=instruction, input=prompt,
+                model=model, instructions=instruction, input='JSON input:\n' + prompt,
                 text={'format': {'type': 'json_object'}}, max_output_tokens=4096,
             )
         result = parse_object(response.output_text)
