@@ -13,6 +13,10 @@ _runtime_configuration = None
 _runtime_keys = {}
 
 
+class ProviderResponseError(ValueError):
+    """A provider returned an unusable response; never include its raw text."""
+
+
 def model_for(provider):
     return os.getenv({'openai': 'OPENAI_MODEL', 'gemini': 'GEMINI_MODEL', 'anthropic': 'ANTHROPIC_MODEL', 'ollama': 'OLLAMA_MODEL'}[provider], DEFAULT_MODELS[provider])
 
@@ -100,16 +104,30 @@ def readiness(config):
 
 
 def parse_object(raw):
-    # Claude may wrap JSON in a markdown fence despite the instruction.
-    raw = raw.strip()
+    # Small models may wrap JSON in a fence or one short line of prose.
+    raw = raw.strip().lstrip('\ufeff')
     if raw.startswith('```'):
         raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw)
     def reject_constant(value):
         raise ValueError(f'Invalid JSON constant: {value}')
-    result = json.loads(raw, parse_constant=reject_constant)
+    try:
+        result = json.loads(raw, parse_constant=reject_constant)
+    except json.JSONDecodeError:
+        start, end = raw.find('{'), raw.rfind('}')
+        if start < 0 or end <= start:
+            raise
+        result = json.loads(raw[start:end + 1], parse_constant=reject_constant)
     if not isinstance(result, dict):
         raise ValueError('Expected a JSON object')
     return result
+
+
+def parse_provider_object(raw, provider, model):
+    try:
+        return parse_object(raw)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        label = {'openai': 'OpenAI', 'gemini': 'Gemini', 'anthropic': 'Anthropic', 'ollama': 'Ollama'}.get(provider, provider)
+        raise ProviderResponseError(f'{label} model {model} returned invalid JSON') from None
 
 
 async def ask(prompt, instruction, model=None, provider='openai', with_usage=False, schema=None,
@@ -132,7 +150,7 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
                 model=model, instructions=instruction, input='JSON input:\n' + prompt,
                 text={'format': {'type': 'json_object'}}, max_output_tokens=4096,
             )
-        result = parse_object(response.output_text)
+        result = parse_provider_object(response.output_text, provider, model)
         if with_usage:
             result['_total_tokens'] = response.usage.total_tokens if response.usage else None
         return result
@@ -171,7 +189,7 @@ async def ask(prompt, instruction, model=None, provider='openai', with_usage=Fal
             if data.get('stop_reason') != 'end_turn':
                 raise ValueError('Claude did not return a complete answer')
             raw = ''.join(p.get('text', '') for p in data.get('content', []) if p.get('type') == 'text')
-    result = parse_object(raw)
+    result = parse_provider_object(raw, provider, model)
     if with_usage:
         result['_total_tokens'] = total_tokens
     return result
@@ -202,7 +220,7 @@ async def ask_local(prompt, instruction, model, with_usage=False, schema=None):
         data = response.json()
     if data.get('done') is not True or data.get('done_reason', 'stop') != 'stop':
         raise ValueError('Local model did not return a complete answer')
-    result = parse_object(data['message']['content'])
+    result = parse_provider_object(data['message']['content'], 'ollama', model)
     if with_usage:
         counts = [data.get('prompt_eval_count'), data.get('eval_count')]
         result['_total_tokens'] = sum(counts) if all(type(c) is int and c >= 0 for c in counts) else None

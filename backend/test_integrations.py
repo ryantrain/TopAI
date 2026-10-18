@@ -81,6 +81,10 @@ class IntegrationCheck(unittest.TestCase):
             with self.assertRaises(ValueError):
                 providers.parse_object(raw)
         self.assertEqual(providers.parse_object('```json\n{"score": 3}\n```'), {'score': 3})
+        self.assertEqual(providers.parse_object('Here is the result:\n```json\n{"score": 4}\n```'), {'score': 4})
+        with self.assertRaisesRegex(providers.ProviderResponseError, 'OpenAI model test-model returned invalid JSON') as caught:
+            providers.parse_provider_object('not JSON secret-response', 'openai', 'test-model')
+        self.assertNotIn('secret-response', str(caught.exception))
 
     def test_live_workers_route_without_ground_truth(self):
         async def check():
