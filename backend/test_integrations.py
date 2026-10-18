@@ -140,7 +140,10 @@ class IntegrationCheck(unittest.TestCase):
     def test_readiness_and_configuration(self):
         with patch.dict(os.environ, {}, clear=True):
             config = providers.configuration()
-            self.assertEqual(providers.readiness(config), ['agent 1 OPENAI_API_KEY', 'agent 2 GEMINI_API_KEY', 'agent 3 OPENAI_API_KEY'])
+            # The default roster is one OpenAI and one Anthropic agent, both on a cheap model.
+            self.assertEqual([w['provider'] for w in config['workers']], ['openai', 'anthropic'])
+            self.assertEqual([w['model'] for w in config['workers']], ['gpt-4o-mini', 'claude-haiku-5-5'])
+            self.assertEqual(providers.readiness(config), ['agent 1 OPENAI_API_KEY', 'agent 2 ANTHROPIC_API_KEY'])
             os.environ['WORKER_PROVIDERS'] = 'openai,invalid,gemini'
             with self.assertRaises(ValueError):
                 providers.configuration()

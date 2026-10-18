@@ -8,7 +8,7 @@ import secrets
 import httpx
 
 KEYS = {'openai': 'OPENAI_API_KEY', 'gemini': 'GEMINI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'ollama': None}
-DEFAULT_MODELS = {'openai': 'gpt-4o-mini', 'gemini': 'gemini-2.5-flash-lite', 'anthropic': 'claude-sonnet-4-6', 'ollama': 'qwen2.5:7b'}
+DEFAULT_MODELS = {'openai': 'gpt-4o-mini', 'gemini': 'gemini-2.5-flash-lite', 'anthropic': 'claude-haiku-5-5', 'ollama': 'qwen2.5:7b'}
 _runtime_configuration = None
 _runtime_keys = {}
 
@@ -25,7 +25,7 @@ def configuration():
     if _runtime_configuration is not None:
         return dict(cost_per_1k_tokens=list(_runtime_configuration['cost_per_1k_tokens']),
                     workers=[dict(worker) for worker in _runtime_configuration['workers']])
-    workers = [p.strip().lower() for p in os.getenv('WORKER_PROVIDERS', 'openai,gemini,openai').split(',')]
+    workers = [p.strip().lower() for p in os.getenv('WORKER_PROVIDERS', 'openai,anthropic').split(',')]
     models = [m.strip() for m in os.getenv('WORKER_MODELS', '').split(',')]
     raw_rates = os.getenv('WORKER_COST_PER_1K_TOKENS', '')
     rates = raw_rates.split(',') if raw_rates else [''] * len(workers)

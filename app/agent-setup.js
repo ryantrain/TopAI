@@ -8,7 +8,7 @@ import { ROSTER } from './agents';
 const PROVIDERS = {
   openai: { label: 'OpenAI', model: 'gpt-4o-mini' },
   gemini: { label: 'Gemini', model: 'gemini-2.5-flash-lite' },
-  anthropic: { label: 'Anthropic', model: 'claude-sonnet-4-6' },
+  anthropic: { label: 'Anthropic', model: 'claude-haiku-5-5' },
   ollama: { label: 'Local Ollama', model: 'qwen2.5:7b' },
 };
 
@@ -18,6 +18,7 @@ const MODEL_OPTIONS = {
     ['gpt-4o-mini', 'GPT-4o mini'],
   ],
   anthropic: [
+    ['claude-haiku-5-5', 'Claude Haiku 5.5'],
     ['claude-sonnet-4-6', 'Claude Sonnet 4.6'],
   ],
 };
@@ -29,7 +30,8 @@ const blank = (provider = 'openai', index = 0) => ({
 export default function AgentSetup({ configuration, onConfigured, onDemo }) {
   const [agents, setAgents] = useState(() => configuration?.workers?.length
     ? configuration.workers.map(({ provider, model, label }, index) => ({ provider, model, api_key: '', label: label || ROSTER[index]?.name || `Agent ${index + 1}` }))
-    : [blank()]);
+    // Start with a cheap model from two providers, so the first run compares rather than measures one agent.
+    : [blank('openai', 0), blank('anthropic', 1)]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
 
