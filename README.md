@@ -1,8 +1,19 @@
-# Agent Classroom
+# TopAI
 
-Agent Classroom helps students and teachers find the best AI model for a specific task using their own material. The reference use case is integral mathematics: describe the job, upload worksheets with trusted answers, and compare up to six agents on the same questions.
+TopAI helps students and teachers find the best AI model for a specific task using their own material. The reference use case is integral mathematics: describe the job, upload worksheets with trusted answers, and compare up to six agents on the same questions.
 
 The benchmark engine is general enough for numeric answers, exact labels, structured JSON, generated-item counts, and rubric-judged responses.
+
+## Current capabilities
+
+- Compare one to six OpenAI, Gemini, Anthropic, or local Ollama agents, or use three simulated demo agents.
+- Import worksheets, review editable benchmark criteria, and run quizzes with 10 fresh questions each.
+- Inspect answers and grades, compare cumulative metrics, and choose a recommendation using an adjustable accuracy threshold.
+- Browse saved quiz history and delete individual archived results.
+
+Built with Next.js 16, React 19, Tailwind CSS 4, Recharts, Python, and FastAPI. Storage defaults to SQLite, with optional PostgreSQL support. Next.js forwards `/api/*` to FastAPI on port 8000; set `BACKEND_URL` to override the destination.
+
+This is a local, single-user prototype without authentication or user isolation. The backend maintains one shared active session and should run as a single process.
 
 ## Execution flow
 
@@ -73,14 +84,14 @@ OPENAI_MODEL=gpt-4o-mini
 # Optional; blank uses OPENAI_MODEL.
 OPENAI_JUDGE_MODEL=
 
-WORKER_PROVIDERS=gemini,gemini,gemini
-WORKER_MODELS=gemini-2.5-flash-lite,gemini-2.5-flash-lite,gemini-2.5-flash-lite
-WORKER_COST_PER_1K_TOKENS=,,
+WORKER_PROVIDERS=openai,anthropic
+WORKER_MODELS=
+WORKER_COST_PER_1K_TOKENS=,
 
 OLLAMA_MODEL=qwen2.5:7b
 ```
 
-The built-in cloud defaults are `gpt-4o-mini`, `gemini-2.5-flash-lite`, and `claude-sonnet-4-6`. Choose **Custom model…** for another OpenAI or Anthropic model.
+The built-in cloud defaults are `gpt-4o-mini`, `gemini-2.5-flash-lite`, and `claude-haiku-5-5`. Initial setup defaults to OpenAI and Anthropic; Claude Sonnet 4.6 is also a preset. These are application defaults, subject to provider availability. Choose **Custom model…** for another OpenAI or Anthropic model.
 
 At setup, choose **Use real agents** after entering the configuration, or **Skip and use 3 demo agents**. The app never silently changes a requested real-agent run into a demo.
 
@@ -127,6 +138,8 @@ The dashboard reports:
 - an overall relative score combining token efficiency and throughput;
 - repeat agreement and numeric error diagnostics when applicable.
 
+Accuracy includes all graded batches. Speed, efficiency, and overall comparisons use matched batches with valid usage and timing for every selected agent. Recommendations favor overall score among agents meeting the adjustable accuracy threshold; if none qualify, accuracy takes priority. Cost breaks ties. Cost estimates depend on available token usage and configured model rates and are not billing records.
+
 Demo timing and token counts are seeded simulation values. Evaluator latency and evaluator tokens are excluded from worker metrics. Results apply only to the uploaded data, prompt, criteria, evaluator, and model versions used in that run.
 
 ## Storage
@@ -151,9 +164,11 @@ Important routes:
 - `DELETE /api/history/{session_id}/{round_number}` — remove one saved quiz and clear its archived snapshot; retain an identity marker so it cannot reappear. Current class results and other cumulative snapshots stay unchanged.
 
 ```bash
-.venv/bin/python -m unittest backend.test_history backend.test_session backend.test_integrations backend.test_datasets backend.test_evaluation -v
+.venv/bin/python -m unittest discover -s backend -p "test_*.py" -v
 node app/api-response.test.mjs
 node app/model-metrics.test.mjs
+node app/history-api.test.mjs
+node app/history-cache.test.mjs
 npm run build
 ```
 
